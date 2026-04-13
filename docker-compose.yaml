@@ -1,13 +1,9 @@
 services:
   # Service A
   servicea:
-    build:
-      context: ./serviceA
-    image: ecs_eks-servicea
+    image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/servicea:latest
     ports:
       - "3001:3001"
-    env_file:
-      - ./serviceA/.env
     networks:
       - appnet
     depends_on:
@@ -21,13 +17,9 @@ services:
 
   # Service B
   serviceb:
-    build:
-      context: ./serviceB
-    image: ecs_eks-serviceb
+    image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/serviceb:latest
     ports:
       - "3002:3002"
-    env_file:
-      - ./serviceB/.env
     networks:
       - appnet
     depends_on:
@@ -41,13 +33,9 @@ services:
 
   # Service C
   servicec:
-    build:
-      context: ./serviceC
-    image: ecs_eks-servicec
+    image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/servicec:latest
     ports:
       - "3003:3003"
-    env_file:
-      - ./serviceC/.env
     networks:
       - appnet
     depends_on:
@@ -61,13 +49,9 @@ services:
 
   # Service D
   serviced:
-    build:
-      context: ./serviceD
-    image: ecs_eks-serviced
+    image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/serviced:latest
     ports:
       - "3004:3004"
-    env_file:
-      - ./serviceD/.env
     networks:
       - appnet
     depends_on:
@@ -81,13 +65,9 @@ services:
 
   # Service E
   servicee:
-    build:
-      context: ./serviceE
-    image: ecs_eks-servicee
+    image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/servicee:latest
     ports:
       - "3005:3005"
-    env_file:
-      - ./serviceE/.env
     networks:
       - appnet
     depends_on:
@@ -100,13 +80,9 @@ services:
       - DB_NAME=admin
 
   frontend:
-    build:
-      context: ./frontend
-    image: ecs_eks-frontend
+    image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/frontend:latest
     ports:
       - "8081:80"
-    env_file:
-      - ./frontend/.env
     networks:
       - appnet
     environment:
@@ -118,8 +94,6 @@ services:
       - REACT_APP_SERVICE_E_HEALTH=http://servicee:3005/health
       - REACT_APP_REQUEST_TIMEOUT=15000
       - REACT_APP_ENABLE_DEBUG=true
-
-
 
   postgres:
     image: postgres:13
