@@ -67,7 +67,7 @@ services:
   servicee:
     image: 547519647676.dkr.ecr.ap-south-1.amazonaws.com/servicee:latest
     ports:
-      - "3005:3005"
+      - "3005:3004"
     networks:
       - appnet
     depends_on:
