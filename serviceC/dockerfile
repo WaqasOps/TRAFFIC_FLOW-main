@@ -1,4 +1,4 @@
-# Dockerfile for React frontend
+n# Dockerfile for React frontend
 FROM node:18 AS build
 
 WORKDIR /app

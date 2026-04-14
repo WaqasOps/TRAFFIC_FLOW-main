@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+    container_name: traffic-flow-frontend
+    ports:
+      - "80:80"
+    networks:
+      - traffic-flow
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+
+  service-a:
+    build:
+      context: ./serviceA
+      dockerfile: dockerfile
+    container_name: traffic-flow-service-a
+    ports:
+      - "3001:3001"
+    networks:
+      - traffic-flow
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - SERVICE_B_URL=http://service-b:3002
+    depends_on:
+      - service-b
+    restart: unless-stopped
+
+  service-b:
+    build:
+      context: ./serviceB
+      dockerfile: dockerfile
+    container_name: traffic-flow-service-b
+    ports:
+      - "3002:3002"
+    networks:
+      - traffic-flow
+    environment:
+      - PORT=3002
+      - NODE_ENV=production
+      - SERVICE_C_URL=http://service-c:3003
+    depends_on:
+      - service-c
+    restart: unless-stopped
+
+  service-c:
+    build:
+      context: ./serviceC
+      dockerfile: dockerfile
+    container_name: traffic-flow-service-c
+    ports:
+      - "3003:3003"
+    networks:
+      - traffic-flow
+    environment:
+      - PORT=3003
+      - NODE_ENV=production
+      - SERVICE_D_URL=http://service-d:3004
+    depends_on:
+      - service-d
+    restart: unless-stopped
+
+  service-d:
+    build:
+      context: ./serviceD
+      dockerfile: dockerfile
+    container_name: traffic-flow-service-d
+    ports:
+      - "3004:3004"
+    networks:
+      - traffic-flow
+    environment:
+      - PORT=3004
+      - NODE_ENV=production
+      - SERVICE_E_URL=http://service-e:3005
+    depends_on:
+      - service-e
+    restart: unless-stopped
+
+  service-e:
+    build:
+      context: ./serviceE
+      dockerfile: dockerfile
+    container_name: traffic-flow-service-e
+    ports:
+      - "3005:3005"
+    networks:
+      - traffic-flow
+    environment:
+      - PORT=3005
+      - NODE_ENV=production
+    restart: unless-stopped
+
+networks:
+  traffic-flow:
+    driver: bridge

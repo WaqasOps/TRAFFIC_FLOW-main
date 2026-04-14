@@ -10,3 +10,4 @@ coverage
 *.sublime-workspace
 *.swp
 *.bak                   
+logs

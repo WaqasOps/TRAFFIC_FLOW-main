@@ -1,46 +1,309 @@
-name: CD - Deploy to EC2
+
+name: CD - Build, Push & Deploy to EC2
 
 on:
   push:
-    branches: ["main"]
+    branches: ["dev"]
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-push:
+    name: Build & Push ${{ matrix.service }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: frontend
+            repository: traffic-flow-frontend
+            folder: frontend
+          - service: service-a
+            repository: traffic-flow-service-a
+            folder: serviceA
+          - service: service-b
+            repository: traffic-flow-service-b
+            folder: serviceB
+          - service: service-c
+            repository: traffic-flow-service-c
+            folder: serviceC
+          - service: service-d
+            repository: traffic-flow-service-d
+            folder: serviceD
+          - service: service-e
+            repository: traffic-flow-service-e
+            folder: serviceE
+      fail-fast: false
+    
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+      IMAGE_TAG: ${{ github.sha }}
+    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: SCP docker-compose file to EC2
-        uses: appleboy/scp-action@master
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.yaml"
-          target: "/home/ubuntu/"
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Execute Remote Commands via SSH
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend with build args
+        if: matrix.service == 'frontend'
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.folder }}
+          push: false
+          load: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            REACT_APP_SERVICE_A_URL=${{ secrets.REACT_APP_SERVICE_A_URL }}
+            REACT_APP_SERVICE_B_URL=${{ secrets.REACT_APP_SERVICE_B_URL }}
+            REACT_APP_SERVICE_C_URL=${{ secrets.REACT_APP_SERVICE_C_URL }}
+            REACT_APP_SERVICE_D_URL=${{ secrets.REACT_APP_SERVICE_D_URL }}
+            REACT_APP_SERVICE_E_URL=${{ secrets.REACT_APP_SERVICE_E_URL }}
+            REACT_APP_SERVICE_A_HEALTH=${{ secrets.REACT_APP_SERVICE_A_HEALTH }}
+            REACT_APP_SERVICE_B_HEALTH=${{ secrets.REACT_APP_SERVICE_B_HEALTH }}
+            REACT_APP_SERVICE_C_HEALTH=${{ secrets.REACT_APP_SERVICE_C_HEALTH }}
+            REACT_APP_SERVICE_D_HEALTH=${{ secrets.REACT_APP_SERVICE_D_HEALTH }}
+            REACT_APP_SERVICE_E_HEALTH=${{ secrets.REACT_APP_SERVICE_E_HEALTH }}
+            REACT_APP_REQUEST_TIMEOUT=${{ secrets.REACT_APP_REQUEST_TIMEOUT }}
+            REACT_APP_ENABLE_DEBUG=${{ secrets.REACT_APP_ENABLE_DEBUG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Backend services
+        if: matrix.service != 'frontend'
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.folder }}
+          push: false
+          load: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Push image to ECR (commit SHA tag)
+        run: |
+          docker tag ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }} \
+                      ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }}
+          echo "✓ Pushed ${{ matrix.service }} with tag ${{ env.IMAGE_TAG }}"
+
+      - name: Push image to ECR (latest tag)
+        run: |
+          docker tag ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }} \
+                      ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:latest
+          echo "✓ Pushed ${{ matrix.service }} with tag latest"
+
+      - name: Image digest
+        run: |
+          echo "Service: ${{ matrix.service }}"
+          echo "Repository: ${{ matrix.repository }}"
+          echo "Image URL: ${{ env.ECR_REGISTRY }}/${{ matrix.repository }}:${{ env.IMAGE_TAG }}"
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: success()
+    
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+      IMAGE_TAG: ${{ github.sha }}
+      NODE_ENV: ${{ secrets.NODE_ENV }}
+      DOCKER_NETWORK: ${{ secrets.DOCKER_NETWORK }}
+      # Database Configuration
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_PASS: ${{ secrets.DB_PASS }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      # Ports
+      FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
+      SERVICE_A_PORT: ${{ secrets.SERVICE_A_PORT }}
+      SERVICE_B_PORT: ${{ secrets.SERVICE_B_PORT }}
+      SERVICE_C_PORT: ${{ secrets.SERVICE_C_PORT }}
+      SERVICE_D_PORT: ${{ secrets.SERVICE_D_PORT }}
+      SERVICE_E_PORT: ${{ secrets.SERVICE_E_PORT }}
+      # Container Names
+      CONTAINER_FRONTEND: ${{ secrets.CONTAINER_FRONTEND }}
+      CONTAINER_SERVICE_A: ${{ secrets.CONTAINER_SERVICE_A }}
+      CONTAINER_SERVICE_B: ${{ secrets.CONTAINER_SERVICE_B }}
+      CONTAINER_SERVICE_C: ${{ secrets.CONTAINER_SERVICE_C }}
+      CONTAINER_SERVICE_D: ${{ secrets.CONTAINER_SERVICE_D }}
+      CONTAINER_SERVICE_E: ${{ secrets.CONTAINER_SERVICE_E }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 10m
           script: |
-            # 1. AWS CLI Configure (Using Secrets)
+            set -e
+            
+            echo "=========================================="
+            echo "🚀 Starting deployment to EC2"
+            echo "=========================================="
+            
+            # 1. Set AWS credentials
             export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            export AWS_DEFAULT_REGION=ap-south-1
-
-            # 2. ECR Login
-            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin 547519647676.dkr.ecr.ap-south-1.amazonaws.com
+            export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
             
+            echo "📋 Step 1: AWS ECR Login"
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+            echo "✓ ECR login successful"
             
-            # 3. Deployment
-            cd /home/ubuntu/
-            sudo docker-compose pull
-            sudo docker-compose up -d
+            echo "📋 Step 2: Stopping existing containers"
+            sudo docker stop ${{ env.CONTAINER_FRONTEND }} ${{ env.CONTAINER_SERVICE_A }} ${{ env.CONTAINER_SERVICE_B }} ${{ env.CONTAINER_SERVICE_C }} ${{ env.CONTAINER_SERVICE_D }} ${{ env.CONTAINER_SERVICE_E }} 2>/dev/null || true
+            sudo docker rm ${{ env.CONTAINER_FRONTEND }} ${{ env.CONTAINER_SERVICE_A }} ${{ env.CONTAINER_SERVICE_B }} ${{ env.CONTAINER_SERVICE_C }} ${{ env.CONTAINER_SERVICE_D }} ${{ env.CONTAINER_SERVICE_E }} 2>/dev/null || true
+            echo "✓ Existing containers stopped"
+            
+            echo "📋 Step 3: Creating Docker network"
+            sudo docker network create ${{ env.DOCKER_NETWORK }} 2>/dev/null || true
+            echo "✓ Docker network ready"
+            
+            echo "📋 Step 4: Deploying services in dependency order"
+            
+            echo "  → Frontend"
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_FRONTEND }} \
+              --network ${{ env.DOCKER_NETWORK }} \
+              -p ${{ env.FRONTEND_PORT }}:80 \
+              -e NODE_ENV=${{ env.NODE_ENV }} \
+              ${{ env.ECR_REGISTRY }}/traffic-flow-frontend:${{ env.IMAGE_TAG }}
+            
+            echo "  → Service E (base service)"
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_SERVICE_E }} \
+              --network ${{ env.DOCKER_NETWORK }} \
+              -p ${{ env.SERVICE_E_PORT }}:${{ env.SERVICE_E_PORT }} \
+              -e PORT=${{ env.SERVICE_E_PORT }} \
+              -e NODE_ENV=${{ env.NODE_ENV }} \
+              -e DB_USER=${{ env.DB_USER }} \
+              -e DB_HOST=${{ env.DB_HOST }} \
+              -e DB_NAME=${{ env.DB_NAME }} \
+              -e DB_PASS=${{ env.DB_PASS }} \
+              -e DB_PORT=${{ env.DB_PORT }} \
+              ${{ env.ECR_REGISTRY }}/traffic-flow-service-e:${{ env.IMAGE_TAG }}
+            sleep 2
+            
+            echo "  → Service D (depends on E)"
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_SERVICE_D }} \
+              --network ${{ env.DOCKER_NETWORK }} \
+              -p ${{ env.SERVICE_D_PORT }}:${{ env.SERVICE_D_PORT }} \
+              -e PORT=${{ env.SERVICE_D_PORT }} \
+              -e NODE_ENV=${{ env.NODE_ENV }} \
+              -e DB_USER=${{ env.DB_USER }} \
+              -e DB_HOST=${{ env.DB_HOST }} \
+              -e DB_NAME=${{ env.DB_NAME }} \
+              -e DB_PASS=${{ env.DB_PASS }} \
+              -e DB_PORT=${{ env.DB_PORT }} \
+              -e SERVICE_E_URL=http://${{ env.CONTAINER_SERVICE_E }}:${{ env.SERVICE_E_PORT }} \
+              ${{ env.ECR_REGISTRY }}/traffic-flow-service-d:${{ env.IMAGE_TAG }}
+            sleep 2
+            
+            echo "  → Service C (depends on D)"
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_SERVICE_C }} \
+              --network ${{ env.DOCKER_NETWORK }} \
+              -p ${{ env.SERVICE_C_PORT }}:${{ env.SERVICE_C_PORT }} \
+              -e PORT=${{ env.SERVICE_C_PORT }} \
+              -e NODE_ENV=${{ env.NODE_ENV }} \
+              -e DB_USER=${{ env.DB_USER }} \
+              -e DB_HOST=${{ env.DB_HOST }} \
+              -e DB_NAME=${{ env.DB_NAME }} \
+              -e DB_PASS=${{ env.DB_PASS }} \
+              -e DB_PORT=${{ env.DB_PORT }} \
+              -e SERVICE_D_URL=http://${{ env.CONTAINER_SERVICE_D }}:${{ env.SERVICE_D_PORT }} \
+              ${{ env.ECR_REGISTRY }}/traffic-flow-service-c:${{ env.IMAGE_TAG }}
+            sleep 2
+            
+            echo "  → Service B (depends on C)"
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_SERVICE_B }} \
+              --network ${{ env.DOCKER_NETWORK }} \
+              -p ${{ env.SERVICE_B_PORT }}:${{ env.SERVICE_B_PORT }} \
+              -e PORT=${{ env.SERVICE_B_PORT }} \
+              -e NODE_ENV=${{ env.NODE_ENV }} \
+              -e DB_USER=${{ env.DB_USER }} \
+              -e DB_HOST=${{ env.DB_HOST }} \
+              -e DB_NAME=${{ env.DB_NAME }} \
+              -e DB_PASS=${{ env.DB_PASS }} \
+              -e DB_PORT=${{ env.DB_PORT }} \
+              -e SERVICE_C_URL=http://${{ env.CONTAINER_SERVICE_C }}:${{ env.SERVICE_C_PORT }} \
+              ${{ env.ECR_REGISTRY }}/traffic-flow-service-b:${{ env.IMAGE_TAG }}
+            sleep 2
+            
+            echo "  → Service A (depends on B)"
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_SERVICE_A }} \
+              --network ${{ env.DOCKER_NETWORK }} \
+              -p ${{ env.SERVICE_A_PORT }}:${{ env.SERVICE_A_PORT }} \
+              -e PORT=${{ env.SERVICE_A_PORT }} \
+              -e NODE_ENV=${{ env.NODE_ENV }} \
+              -e DB_USER=${{ env.DB_USER }} \
+              -e DB_HOST=${{ env.DB_HOST }} \
+              -e DB_NAME=${{ env.DB_NAME }} \
+              -e DB_PASS=${{ env.DB_PASS }} \
+              -e DB_PORT=${{ env.DB_PORT }} \
+              -e SERVICE_B_URL=http://${{ env.CONTAINER_SERVICE_B }}:${{ env.SERVICE_B_PORT }} \
+              ${{ env.ECR_REGISTRY }}/traffic-flow-service-a:${{ env.IMAGE_TAG }}
+            sleep 2
+            
+            echo "✓ All services deployed"
+            
+            echo "📋 Step 5: Verifying deployment"
+            sudo docker ps -a
+            
+            echo ""
+            echo "📋 Step 6: Service health check"
+            sudo docker logs ${{ env.CONTAINER_SERVICE_A }} --tail 10 || true
+            
+            echo ""
+            echo "📋 Step 7: Cleanup unused resources"
+            sudo docker system prune -f --filter="until=24h"
+            echo "✓ Cleanup completed"
+            
+            echo ""
+            echo "=========================================="
+            echo "✅ Deployment completed successfully"
+            echo "=========================================="
+
+      - name: Verify Deployment
+        uses: appleboy/ssh-action@master
+        if: success()
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "🔍 Final deployment status:"
+            sudo docker ps --filter "name=traffic-flow" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 
-            # 4. Cleanup (Faltu images delete karne ke liye)
-            sudo docker system prune -f
+
+
+
+
+
+
+
+            
