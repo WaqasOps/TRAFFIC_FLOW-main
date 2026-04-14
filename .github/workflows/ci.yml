@@ -2,7 +2,7 @@ name: CI - Build & Push to ECR
 
 on:
   push:
-    branches: ["main"]
+    branches: ["dev"]
 
 jobs:
   build-and-push:
@@ -50,4 +50,7 @@ jobs:
 
       - name: Push to ECR
         run: |
-          docker push 547519647676.dkr.ecr.ap-south-1.amazonaws.com/${{ matrix.service }}:latest
+          docker push ${{ secrets_FRONTEND_REGISTRY }}/${{ matrix.service }}:latest
+
+
+          
