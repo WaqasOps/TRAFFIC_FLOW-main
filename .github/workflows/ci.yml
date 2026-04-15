@@ -7,6 +7,7 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         include:
@@ -38,18 +39,12 @@ jobs:
         run: |
           aws ecr get-login-password --region ap-south-1 | \
           docker login --username AWS --password-stdin 547519647676.dkr.ecr.ap-south-1.amazonaws.com
-
       - name: Build Docker image
         run: |
           docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
-
       - name: Tag image
         run: |
           docker tag ${{ matrix.service }}:latest 547519647676.dkr.ecr.ap-south-1.amazonaws.com/${{ matrix.service }}:latest
-
       - name: Push to ECR
         run: |
-          docker push ${{ secrets_FRONTEND_REGISTRY }}/${{ matrix.service }}:latest
-
-
-
+          docker push ${{ secrets.FRONTEND_REGISTRY }}/${{ matrix.service }}:latest
