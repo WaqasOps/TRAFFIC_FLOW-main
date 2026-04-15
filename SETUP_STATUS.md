@@ -160,16 +160,16 @@ CONTAINER_SERVICE_E         String:  traffic-flow-service-e
 
 ### Group 7: Frontend React Build Vars (11)
 ```
-REACT_APP_SERVICE_A_URL     String:  http://EC2_IP:3001/serviceA
-REACT_APP_SERVICE_B_URL     String:  http://EC2_IP:3002/serviceB
-REACT_APP_SERVICE_C_URL     String:  http://EC2_IP:3003/serviceC
-REACT_APP_SERVICE_D_URL     String:  http://EC2_IP:3004/serviceD
-REACT_APP_SERVICE_E_URL     String:  http://EC2_IP:3005/serviceE
-REACT_APP_SERVICE_A_HEALTH  String:  http://EC2_IP:3001/health
-REACT_APP_SERVICE_B_HEALTH  String:  http://EC2_IP:3002/health
-REACT_APP_SERVICE_C_HEALTH  String:  http://EC2_IP:3003/health
-REACT_APP_SERVICE_D_HEALTH  String:  http://EC2_IP:3004/health
-REACT_APP_SERVICE_E_HEALTH  String:  http://EC2_IP:3005/health
+REACT_APP_SERVICE_A_URL     String:  http://localhost:3001/serviceA
+REACT_APP_SERVICE_B_URL     String:  http://localhost:3002/serviceB
+REACT_APP_SERVICE_C_URL     String:  http://localhost:3003/serviceC
+REACT_APP_SERVICE_D_URL     String:  http://localhost:3004/serviceD
+REACT_APP_SERVICE_E_URL     String:  http://localhost:3005/serviceE
+REACT_APP_SERVICE_A_HEALTH  String:  http://localhost:3001/health
+REACT_APP_SERVICE_B_HEALTH  String:  http://localhost:3002/health
+REACT_APP_SERVICE_C_HEALTH  String:  http://localhost:3003/health
+REACT_APP_SERVICE_D_HEALTH  String:  http://localhost:3004/health
+REACT_APP_SERVICE_E_HEALTH  String:  http://localhost:3005/health
 REACT_APP_REQUEST_TIMEOUT   Integer: 15000 (milliseconds)
 REACT_APP_ENABLE_DEBUG      String:  false (production) or true (dev)
 ```
