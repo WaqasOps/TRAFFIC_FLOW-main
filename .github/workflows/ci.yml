@@ -49,7 +49,7 @@ jobs:
       # ---------- SERVICESA ----------
       - name: Build and Push servicesA
         run: |
-          docker build -t servicesa ./servicea
+          docker build -t servicesa ./serviceA
           docker tag servicesa:latest ${{ secrets.ECR_REGISTRY }}/servicesa:latest
           docker push ${{ secrets.ECR_REGISTRY }}/servicesa:latest
 
@@ -57,7 +57,7 @@ jobs:
       # ---------- SERVICESB ----------
       - name: Build and Push servicesB
         run: |
-          docker build -t servicesb ./serviceb
+          docker build -t servicesb ./serviceB
           docker tag servicesb:latest ${{ secrets.ECR_REGISTRY }}/servicesb:latest
           docker push ${{ secrets.ECR_REGISTRY }}/servicesb:latest
 
@@ -65,7 +65,7 @@ jobs:
       # ---------- SERVICESC ----------
       - name: Build and Push servicesC
         run: |
-          docker build -t servicesc ./servicec
+          docker build -t servicesc ./serviceC
           docker tag servicesc:latest ${{ secrets.ECR_REGISTRY }}/servicesc:latest
           docker push ${{ secrets.ECR_REGISTRY }}/servicesc:latest
 
@@ -73,7 +73,7 @@ jobs:
       # ---------- SERVICESD ----------
       - name: Build and Push servicesD
         run: |
-          docker build -t servicesd ./serviced
+          docker build -t servicesd ./servicD
           docker tag servicesd:latest ${{ secrets.ECR_REGISTRY }}/servicesd:latest
           docker push ${{ secrets.ECR_REGISTRY }}/servicesd:latest
 
@@ -81,6 +81,6 @@ jobs:
       # ---------- SERVICESE ----------
       - name: Build and Push servicesE
         run: |
-          docker build -t servicese ./servicee
+          docker build -t servicese ./serviceE
           docker tag servicese:latest ${{ secrets.ECR_REGISTRY }}/servicese:latest
           docker push ${{ secrets.ECR_REGISTRY }}/servicese:latest
