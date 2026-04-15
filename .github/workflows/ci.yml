@@ -151,29 +151,18 @@ jobs:
 
     steps:
 
-      deploy:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    env:
-      AWS_REGION: ap-south-1
-      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-
-    steps:
-
-    - name: set up ssh
-      run: |  
+    - name: set up ssh key
+      run: |
         mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
+
     - name: Deploy to EC2
       run: |
-        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
-        set -e
-        set -x
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << EOF 
 
-        echo "Connected to EC2"
 
         # 1. Login to ECR
         aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
@@ -207,5 +196,5 @@ jobs:
         # 6. Cleanup
         sudo docker image prune -f
 
-        EOF  
-   
+        EOF
+        
