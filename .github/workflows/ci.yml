@@ -137,3 +137,75 @@ jobs:
       - name: Push to ECR
         run: |
           docker push ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
+
+
+
+#------------------Deploy EC2--------------------
+   
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    env:
+      AWS_REGION: ap-south-1
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+
+    steps:
+
+      - name: configure AWS CLI
+        run: |
+          mkdir -p ~/.aws
+          echo "[default]" > ~/.aws/credentials
+          echo "aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+          echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+          echo "[default]" > ~/.aws/config
+          echo "region = ap-south-1" >> ~/.aws/config
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts    
+
+
+      - name: Deploy to EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          set -e
+          set -x
+
+          # login to ECR pull the latest images
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          sudo docker pull ${{ secrets.ECR_REGISTRY }}/frontend:latest
+          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicea:latest
+          sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicec:latest
+          sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviced:latest
+          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicee:latest
+
+
+
+          # postgres container 
+
+          # Ensure Docker volume exists
+          sudo mkdir -p /home/ubuntu/postgres-data
+          sudo chown 999:999 /home/ubuntu/postgres-data
+          sudo chmod 700 /home/ubuntu/postgres-data
+
+          # create Docker name volume (if not exists)
+          sudo docker volume inspect postgres-data || sudo docker volume create postgres-data
+
+
+          #Ensure docker network exists
+          sudo docker network create appnet 2>/dev/null || true
+          Run new container without environment variables first
+          sudo docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} --net-v postgres-data:/var/lib/postgresql/data --network appnet -v /home/ubuntu/postgres-data:/data/db postgres:latest
+
+          # Restart the container to apply environment variables
+          sudo docker restart postgres
+
+
+          sudo docker image prune -f
+          EOF
+
