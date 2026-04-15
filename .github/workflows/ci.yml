@@ -91,7 +91,7 @@ name: CI - Build & Push to ECR
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["develop"]
 
 jobs:
   build-and-push:
