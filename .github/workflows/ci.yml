@@ -55,58 +55,134 @@ jobs:
 
 #-------------------------------deploy-------------
 # # -------------------- DEPLOY TO EC2 --------------------
-deploy-postgres:
-  runs-on: ubuntu-latest
-  needs: build-and-push
-  env:
-    # GitHub secrets ko environment variables mein map karein
-    PG_USER: ${{ secrets.POSTGRES_USER }}
-    PG_PASS: ${{ secrets.POSTGRES_PASSWORD }}
-    EC2_IP: ${{ secrets.EC2_HOST }}
 
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+           #depends on postgres
+    env:
+      # Adjust as you wish; these are used on the REMOTE host via heredoc
+      AWS_REGION: ${{ secrets.AWS_REGION}}
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
-    - name: Set up SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts
 
-    - name: Deploy to EC2
-      run: |
-        # In variables ko SSH command ke sath pass karein
-        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$EC2_IP \
-        PG_USER="$PG_USER" PG_PASS="$PG_PASS" 'bash -s' << 'EOF'
+    steps:
+
+
+      - name: Configure AWS CLI
+        run: |
+          mkdir -p ~/.aws
+          echo "[default]" > ~/.aws/credentials
+          echo "aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+          echo "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+          echo "[default]" > ~/.aws/config
+          echo "region=${{ secrets.AWS_REGION }}" >> ~/.aws/config
+
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+
+      - name: Deploy to EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
           set -x
 
-          # Purane container ko hatayein taake naya fresh start ho sake
-          sudo docker rm -f postgres 2>/dev/null || true
+           #--postgres deploy
 
-          # Directory setup
+
+          # Ensure Docker volume exists
           sudo mkdir -p /home/ubuntu/postgres
           sudo chown -R 999:999 /home/ubuntu/postgres
-          sudo chmod 700 /home/ubuntu/postgres
+          sudo chmod -R 700 /home/ubuntu/postgres
         
-          # Network setup
+          # Create Docker named volume (if not already exists)
+          sudo docker volume inspect postgres >/dev/null 2>&1 || sudo docker volume create postgres
+
+
+          # Ensure Docker network exists
           sudo docker network create appnet 2>/dev/null || true                                                                                  
-          
-          # Run Postgres (Ab variables sahi kaam karenge)
-          sudo docker run -d \
-            --name postgres \
-            -p 5432:5432 \
-            -e POSTGRES_USER="$PG_USER" \
-            -e POSTGRES_PASSWORD="$PG_PASS" \
-            --network appnet \
-            -v /home/ubuntu/postgres:/var/lib/postgresql/data \
-            --restart unless-stopped \
-            postgres:13
+          # Run new container without environment variables first
+          sudo docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} --network appnet -v /home/ubuntu/postgres:/var/lib/postgresql/data postgres:13
+
+
+
+          # Restart the container to load environment variables
+          sudo docker restart postgres
+
 
           sudo docker image prune -af
-        EOF
+          EOF
+
+  # deploy:
+  #   runs-on: ubuntu-latest
+  #   needs: build-and-push
+  #          #depends on mongo
+  #   env:
+  #     # Adjust as you wish; these are used on the REMOTE host via heredoc
+  #     AWS_REGION: ${{ secrets.AWS_REGION}}
+  #     AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+
+
+  #   steps:
+
+
+  #     - name: Configure AWS CLI
+  #       run: |
+  #         mkdir -p ~/.aws
+  #         echo "[default]" > ~/.aws/credentials
+  #         echo "aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+  #         echo "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+  #         echo "[default]" > ~/.aws/config
+  #         echo "region=${{ secrets.AWS_REGION }}" >> ~/.aws/config
+
+
+  #     - name: Set up SSH
+  #       run: |
+  #         mkdir -p ~/.ssh
+  #         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+  #         chmod 600 ~/.ssh/id_rsa
+  #         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+
+  #     - name: Deploy to EC2
+  #       run: |
+  #         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+  #         set -e
+  #         set -x
+
+  #          #--postgres deploy
+
+
+  #         # Ensure Docker volume exists
+  #         sudo mkdir -p /home/ubuntu/postgres
+  #         sudo chown -R 999:999 /home/ubuntu/postgres
+  #         sudo chmod -R 700 /home/ubuntu/postgres
+        
+  #         # Create Docker named volume (if not already exists)
+  #         sudo docker volume inspect postgres >/dev/null 2>&1 || sudo docker volume create postgres
+
+
+  #         # Ensure Docker network exists
+  #         sudo docker network create appnet 2>/dev/null || true                                                                                  
+  #         # Run new container without environment variables first
+  #         sudo docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} --network appnet -v /home/ubuntu/postgres:/var/lib/postgresql/data postgres:13
+
+
+
+  #         # Restart the container to load environment variables
+  #         sudo docker restart postgres
+
+
+  #         sudo docker image prune -af
+  #         EOF
+
+
       
 
           #   #AUTH-container
