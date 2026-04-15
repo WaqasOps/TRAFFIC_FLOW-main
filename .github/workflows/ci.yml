@@ -38,13 +38,13 @@ jobs:
       - name: Login to ECR
         run: |
           aws ecr get-login-password --region ap-south-1 | \
-          docker login --username AWS --password-stdin 547519647676.dkr.ecr.ap-south-1.amazonaws.com
+          docker login --username AWS --password-stdin ${{ secrets.FRONTEND_REPOSITORY }}
       - name: Build Docker image
         run: |
           docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
       - name: Tag image
         run: |
-          docker tag ${{ matrix.service }}:latest 547519647676.dkr.ecr.ap-south-1.amazonaws.com/${{ matrix.service }}:latest
+          docker tag ${{ matrix.service }}:latest ${{ secrets.FRONTEND_REPOSITORY }}/${{ matrix.service }}:latest
       - name: Push to ECR
         run: |
-          docker push ${{ secrets.FRONTEND_REGISTRY }}/${{ matrix.service }}:latest
+          docker push ${{ secrets.FRONTEND_REPOSITORY }}/${{ matrix.service }}:latest
