@@ -48,3 +48,6 @@ jobs:
       - name: Push to ECR
         run: |
           docker push ${{ secrets.FRONTEND_REGISTRY }}/${{ matrix.service }}:latest
+
+
+          
