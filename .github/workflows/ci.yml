@@ -50,7 +50,7 @@ jobs:
       - name: Build and Push servicesA
         run: |
           docker build -t servicesa ./serviceA
-          docker tag servicesa:latest ${{ secrets.ECR_REGISTRY }}/servicesa:latest
+          docker tag servicesa:latest ${{ secrets.ECR_REGISTRY }}/servicea:latest
           docker push ${{ secrets.ECR_REGISTRY }}/servicesa:latest
 
 
@@ -58,29 +58,29 @@ jobs:
       - name: Build and Push servicesB
         run: |
           docker build -t servicesb ./serviceB
-          docker tag servicesb:latest ${{ secrets.ECR_REGISTRY }}/servicesb:latest
-          docker push ${{ secrets.ECR_REGISTRY }}/servicesb:latest
+          docker tag servicesb:latest ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/serviceb:latest
 
 
       # ---------- SERVICESC ----------
       - name: Build and Push servicesC
         run: |
           docker build -t servicesc ./serviceC
-          docker tag servicesc:latest ${{ secrets.ECR_REGISTRY }}/servicesc:latest
-          docker push ${{ secrets.ECR_REGISTRY }}/servicesc:latest
+          docker tag servicesc:latest ${{ secrets.ECR_REGISTRY }}/servicec:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicec:latest
 
 
       # ---------- SERVICESD ----------
       - name: Build and Push servicesD
         run: |
-          docker build -t servicesd ./servicD
-          docker tag servicesd:latest ${{ secrets.ECR_REGISTRY }}/servicesd:latest
-          docker push ${{ secrets.ECR_REGISTRY }}/servicesd:latest
+          docker build -t servicesd ./serviceD
+          docker tag servicesd:latest ${{ secrets.ECR_REGISTRY }}/serviced:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/serviced:latest
 
 
       # ---------- SERVICESE ----------
       - name: Build and Push servicesE
         run: |
           docker build -t servicese ./serviceE
-          docker tag servicese:latest ${{ secrets.ECR_REGISTRY }}/servicese:latest
-          docker push ${{ secrets.ECR_REGISTRY }}/servicese:latest
+          docker tag servicese:latest ${{ secrets.ECR_REGISTRY }}/servicee:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicee:latest
