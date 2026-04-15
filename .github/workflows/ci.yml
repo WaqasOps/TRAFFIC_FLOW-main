@@ -1,53 +1,88 @@
-name: CI - Build & Push to ECR
+name: CI - Build and Push Docker Images to ECR
+
 
 on:
   push:
-    branches: ["dev"]
+    branches: [main]
+
+
+permissions:
+  contents: read
+  id-token: write
+
 
 jobs:
+  # -------------------- BUILD & PUSH IMAGES --------------------
   build-and-push:
+    name: Build and Push Docker Images to ECR
     runs-on: ubuntu-latest
-    strategy:
-      # Prevents one failing service from stopping the others
-      fail-fast: false 
-      matrix:
-        include:
-          - service: servicea
-            folder: serviceA
-          - service: serviceb
-            folder: serviceB
-          - service: servicec
-            folder: serviceC
-          - service: serviced
-            folder: serviceD
-          - service: servicee
-            folder: serviceE
-          - service: frontend
-            folder: frontend
+
 
     steps:
+      # 1️⃣ Checkout
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
+
+      # 2️⃣ Configure AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
+
+      # 3️⃣ Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Tag, and Push
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.registry }}
-          SERVICE_NAME: ${{ matrix.service }}
-          FOLDER: ${{ matrix.folder }}
+
+      # ---------- FRONTEND ----------
+      - name: Build and Push frontend
         run: |
-          # Build using the folder-specific Dockerfile
-          docker build -t $ECR_REGISTRY/$SERVICE_NAME:latest -f ./$FOLDER/Dockerfile .
+          docker build -t frontend ./frontend
+          docker tag frontend:latest ${{ secrets.ECR_REGISTRY }}/frontend:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/frontend:latest
+
+
+      # ---------- SERVICESA ----------
+      - name: Build and Push servicesA
+        run: |
+          docker build -t servicesa ./services/servicesa
+          docker tag servicesa:latest ${{ secrets.ECR_REGISTRY }}/servicesa:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicesa:latest
+
+
+      # ---------- SERVICESB ----------
+      - name: Build and Push servicesB
+        run: |
+          docker build -t servicesb ./services/servicesb
+          docker tag servicesb:latest ${{ secrets.ECR_REGISTRY }}/servicesb:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicesb:latest
+
+
+      # ---------- SERVICESC ----------
+      - name: Build and Push servicesC
+        run: |
+          docker build -t servicesc ./services/servicesc
+          docker tag servicesc:latest ${{ secrets.ECR_REGISTRY }}/servicesc:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicesc:latest
+
+
+      # ---------- SERVICESD ----------
+      - name: Build and Push servicesD
+        run: |
+          docker build -t servicesd ./services/servicesd
+          docker tag servicesd:latest ${{ secrets.ECR_REGISTRY }}/servicesd:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicesd:latest
+
+
+      # ---------- SERVICESE ----------
+      - name: Build and Push servicesE
+        run: |
+          docker build -t servicese ./services/servicese
+          docker tag servicese:latest ${{ secrets.ECR_REGISTRY }}/servicese:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicese:latest
           
-          # Push to ECR
-          docker push $ECR_REGISTRY/$SERVICE_NAME:latest
