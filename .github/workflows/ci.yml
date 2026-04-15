@@ -51,7 +51,7 @@ jobs:
         run: |
           docker build -t servicesa ./serviceA
           docker tag servicesa:latest ${{ secrets.ECR_REGISTRY }}/servicea:latest
-          docker push ${{ secrets.ECR_REGISTRY }}/servicesa:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/servicea:latest
 
 
       # ---------- SERVICESB ----------
