@@ -7,8 +7,9 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     strategy:
+      # Prevents one failing service from stopping the others
+      fail-fast: false 
       matrix:
         include:
           - service: servicea
@@ -35,16 +36,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.registry }}
+          SERVICE_NAME: ${{ matrix.service }}
+          FOLDER: ${{ matrix.folder }}
         run: |
-          aws ecr get-login-password --region ap-south-1 | \
-          docker login --username AWS --password-stdin ${{ secrets.ECR_URL }}
-      - name: Build Docker image
-        run: |
-          docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
-      - name: Tag image
-        run: |
-          docker tag ${{ matrix.service }}:latest ${{ secrets.ECR_URL }}/${{ matrix.service }}:latest
-      - name: Push to ECR
-        run: |
-          docker push ${{ secrets.ECR_URL }}/${{ matrix.service }}:latest
+          # Build using the folder-specific Dockerfile
+          docker build -t $ECR_REGISTRY/$SERVICE_NAME:latest -f ./$FOLDER/Dockerfile .
+          
+          # Push to ECR
+          docker push $ECR_REGISTRY/$SERVICE_NAME:latest
