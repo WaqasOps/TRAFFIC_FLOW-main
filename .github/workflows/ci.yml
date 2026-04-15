@@ -158,14 +158,19 @@ jobs:
           echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
           echo "[default]" > ~/.aws/config
           echo "region = ap-south-1" >> ~/.aws/config
-
-      - name: Set up SSH
+          - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
-          # tr -d '\r' is good for Windows-style line endings
-          echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
+          # 1. Use double quotes and a heredoc to preserve the key format
+          cat <<EOF > ~/.ssh/id_rsa
+          ${{ secrets.EC2_SSH_KEY }}
+          EOF
+          
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          
+          # 2. Use a timeout and || true so keyscan doesn't kill the pipeline
+          ssh-keyscan -T 60 -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
+        
 
       - name: Deploy to EC2
         run: |
