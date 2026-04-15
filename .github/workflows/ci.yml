@@ -151,49 +151,51 @@ jobs:
 
     steps:
 
-      - name: set up ssh
-        run: |  
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+- name: set up ssh
+  run: |  
+    mkdir -p ~/.ssh
+    echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+    ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
-          set -e
-          set -x
+- name: Deploy to EC2
+  run: |
+    ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+      set -e
+      set -x
 
-          # 1. Login to ECR
-          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+      echo "Connected to EC2"
 
-          # 2. Pull latest images
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/frontend:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicea:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviceb:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicec:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviced:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicee:latest
+      # 1. Login to ECR
+      aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
-          # 3. Setup Network and Volume
-          sudo docker network create appnet 2>/dev/null || true
-          sudo docker volume create postgres-data 2>/dev/null || true
+      # 2. Pull latest images
+      sudo docker pull ${{ secrets.ECR_REGISTRY }}/frontend:latest
+      sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicea:latest
+      sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+      sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicec:latest
+      sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviced:latest
+      sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
-          # 4. Stop and Remove existing postgres container if it exists
-          sudo docker rm -f postgres 2>/dev/null || true
+      # 3. Setup Network and Volume
+      sudo docker network create appnet 2>/dev/null || true
+      sudo docker volume create postgres-data 2>/dev/null || true
 
-          # 5. Run Postgres Container
-          # FIX: Changed --net-v to -v (Correct syntax)
-          sudo docker run -d \
-            --name postgres \
-            --network appnet \
-            -p 5432:5432 \
-            -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
-            -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
-            -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
-            -v postgres-data:/var/lib/postgresql/data \
-            postgres:latest
+      # 4. Remove old postgres
+      sudo docker rm -f postgres 2>/dev/null || true
 
-          # 6. Cleanup old images
-          sudo docker image prune -f
-          EOF
+      # 5. Run Postgres
+      sudo docker run -d \
+        --name postgres \
+        --network appnet \
+        -p 5432:5432 \
+        -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+        -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+        -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
+        -v postgres-data:/var/lib/postgresql/data \
+        postgres:latest
+
+      # 6. Cleanup
+      sudo docker image prune -f
+
+    EOF
