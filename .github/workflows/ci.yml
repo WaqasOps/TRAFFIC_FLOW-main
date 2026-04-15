@@ -159,7 +159,6 @@ jobs:
           echo "[default]" > ~/.aws/config
           echo "region = ap-south-1" >> ~/.aws/config
       - name: Set up SSH
-        - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
           cat <<EOF > ~/.ssh/id_rsa
