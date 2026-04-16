@@ -144,32 +144,35 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-           script: |
-            # ECR Login
+            # 1. ECR Login
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             
-            # Network and Cleanup (Added 'auth' here to fix port 3001 conflict)
+            # 2. Network and Cleanup
             sudo docker network create appnet || true
             sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres auth || true
             
-            # 1. Database
-            sudo docker run -d --name postgres --network appnet -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15
+            # 3. Database (Is se 'microservices' DB khud ban jayegi)
+            sudo docker run -d --name postgres --network appnet -p 5432:5432 \
+              -e POSTGRES_PASSWORD=postgres \
+              -e POSTGRES_DB=microservices \
+              postgres:15
             
-            # Intezar karein ke DB ready ho jaye
             sleep 10
             
-            # 2. Backend Services
+            # 4. Backend Service A (DB_PORT lazmi hai warna crash hoga)
             sudo docker run -d --name servicea --network appnet -p 3001:3001 \
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres \
+              -e DB_PORT=5432 \
               -e SERVICE_B_URL=http://serviceb:3002/serviceB \
               ${{ secrets.ECR_REGISTRY }}/servicea:latest
 
+            # 5. Other Services
             sudo docker run -d --name serviceb --network appnet -p 3002:3002 ${{ secrets.ECR_REGISTRY }}/serviceb:latest
             sudo docker run -d --name servicec --network appnet -p 3003:3003 ${{ secrets.ECR_REGISTRY }}/servicec:latest
             sudo docker run -d --name serviced --network appnet -p 3004:3004 ${{ secrets.ECR_REGISTRY }}/serviced:latest
             sudo docker run -d --name servicee --network appnet -p 3005:3005 ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
-            # 3. Frontend (Port 80)
+            # 6. Frontend
             sudo docker run -d --name frontend --network appnet -p 80:80 \
               -e REACT_APP_SERVICE_A_URL=http://13.201.9.34:3001 \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
