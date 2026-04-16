@@ -86,7 +86,56 @@
 #           docker push ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
 
+name: CI - Build & Push to ECR
 
+on:
+  push:
+    branches: ["develop"]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - service: servicea
+            folder: serviceA
+          - service: serviceb
+            folder: serviceB
+          - service: servicec
+            folder: serviceC
+          - service: serviced
+            folder: serviceD
+          - service: servicee
+            folder: serviceE
+          - service: frontend
+            folder: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ap-south-1 | \
+          docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
+      - name: Tag image
+        run: |
+          docker tag ${{ matrix.service }}:latest ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
+      - name: Push to ECR
+        run: |
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
 deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
