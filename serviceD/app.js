@@ -68,6 +68,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'Service D' });
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   logger.info(`Service D running on port ${port}`);
 });

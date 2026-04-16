@@ -112,17 +112,21 @@ graph LR
 ### 📁 Project Structure
 
 ```
-ECS_EKS/
-├── 📦 docker-compose.yaml      # Local orchestration configuration
+TRAFFIC_FLOW-main/
+├── 🔧 start-local.sh           # Automated local startup script
+├── 🔧 setup-local.sh           # Environment setup script
+├── � nginx-proxy.conf         # Nginx proxy configuration for EC2
 ├── 🎨 frontend/                # React SPA frontend
 │   ├── src/                    # React source code
 │   ├── public/                 # Static assets
 │   ├── dockerfile              # Multi-stage build
-│   └── nginx.conf              # Nginx configuration
+│   ├── nginx.conf              # Container nginx config
+│   └── .env.example            # Environment variables template
 ├── 🔷 serviceA/                # Entry point service
 │   ├── app.js                  # Express application
 │   ├── dockerfile              # Service container
-│   └── package.json            # Dependencies
+│   ├── package.json            # Dependencies
+│   └── .env.example            # Environment variables template
 ├── 🔷 serviceB/                # Processing service
 ├── 🔷 serviceC/                # Business logic service
 ├── 🔷 serviceD/                # Integration service
@@ -150,7 +154,6 @@ Ensure you have the following installed:
 
 ```bash
 ✓ Docker (v20.10+)
-✓ Docker Compose (v2.0+)
 ✓ Node.js (v18+)
 ✓ AWS CLI (v2.0+)
 ✓ Git
@@ -162,17 +165,37 @@ Ensure you have the following installed:
 
 ```bash
 git clone <repo-url>
-cd ECS_EKS
+cd TRAFFIC_FLOW-main
 ```
 
-2️⃣ **Configure environment variables**
+2️⃣ **Setup environment files**
 
-Create `.env` files for each service:
+```bash
+# Run the setup script to create .env files from examples
+./setup-local.sh
 
-**Backend Services (.env)**
-```env
-DB_HOST=postgres
-DB_PORT=5432
+# Edit the .env files with your local configuration
+# Each service has its own .env file
+```
+
+3️⃣ **Start all services**
+
+```bash
+# Option 1: Use the automated script
+./start-local.sh
+
+# Option 2: Manual startup (see script for details)
+```
+
+3️⃣ **Access the application**
+
+- **Frontend:** http://localhost
+- **Service A:** http://localhost:3001
+- **Service B:** http://localhost:3002
+- **Service C:** http://localhost:3003
+- **Service D:** http://localhost:3004
+- **Service E:** http://localhost:3005
+- **Database:** localhost:5432
 DB_USER=postgres
 DB_PASSWORD=postgres
 DB_NAME=microservices
@@ -223,38 +246,50 @@ curl http://localhost:3005/health
 
 ## ☁️ Deployment
 
-### 🐳 AWS ECS Deployment
+### � Automated CI/CD Pipeline
 
-#### Step 1: Build and Tag Docker Images
+The GitHub Actions pipeline automatically:
+1. Builds Docker images for all services
+2. Pushes images to Amazon ECR with proper tagging
+3. Deploys containers to EC2 with internal networking
+4. Runs health checks post-deployment
+
+**Note:** Nginx proxy configuration must be set up manually on EC2 (see EC2 Setup section).
+
+### 🔧 Manual Deployment
+
+For manual deployment to EC2:
 
 ```bash
-# Build images
-docker build -t servicea:latest ./serviceA
-docker build -t serviceb:latest ./serviceB
-docker build -t servicec:latest ./serviceC
-docker build -t serviced:latest ./serviceD
-docker build -t servicee:latest ./serviceE
-docker build -t frontend:latest ./frontend
+# 1. SSH into your EC2 instance
+ssh -i your-key.pem ubuntu@your-ec2-ip
+
+# 2. Set up nginx proxy manually (see EC2 Setup section)
+sudo cp nginx-proxy.conf /etc/nginx/sites-available/traffic-flow
+sudo ln -sf /etc/nginx/sites-available/traffic-flow /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+
+# 3. Pull and run containers
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin YOUR_ECR_REGISTRY
+
+# Create network
+docker network create appnet
+docker network connect appnet postgres
+
+# Run services (see pipeline for exact environment variables)
+docker run -d --name servicea --network appnet -p 3001:3001 \
+  -e DB_HOST=postgres -e DB_USER=your_user -e DB_PASS=your_pass -e DB_NAME=your_db \
+  -e SERVICE_B_URL=http://serviceb:3002/serviceB \
+  your-registry/servicea:latest
+
+# Repeat for other services...
+
+# Run frontend (exposed on port 80)
+docker run -d --name frontend --network appnet -p 80:80 \
+  -e REACT_APP_SERVICE_A_URL=/api/serviceA/ \
+  your-registry/frontend:latest
 ```
-
-#### Step 2: Push to Amazon ECR
-
-```bash
-# Authenticate with ECR
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin \
-  <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com
-
-# Tag and push
-docker tag servicea:latest <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/servicea:latest
-docker push <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/servicea:latest
-
-# Repeat for all services
-```
-
-#### Step 3: Create ECS Cluster
-
-```bash
 # Create cluster
 aws ecs create-cluster --cluster-name microservices-cluster
 
@@ -278,6 +313,58 @@ ecs-cli compose --file docker-compose.yaml \
   --cluster microservices-cluster \
   --launch-type FARGATE
 ```
+
+---
+
+### 🖥️ EC2 Setup
+
+#### Prerequisites
+
+- Ubuntu 20.04+ EC2 instance
+- Nginx installed (`sudo apt install nginx`)
+- Docker and Docker Compose installed
+- PostgreSQL running (either in container or RDS)
+
+#### Nginx Proxy Configuration
+
+1. **Copy the nginx configuration:**
+
+```bash
+sudo cp nginx-proxy.conf /etc/nginx/sites-available/traffic-flow
+sudo ln -sf /etc/nginx/sites-available/traffic-flow /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+```
+
+2. **Test and reload nginx:**
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+3. **Verify nginx is running:**
+
+```bash
+sudo systemctl status nginx
+curl http://localhost  # Should show frontend
+```
+
+#### Database Setup
+
+**Option 1: PostgreSQL in Docker**
+
+```bash
+docker run -d --name postgres \
+  -e POSTGRES_USER=your_user \
+  -e POSTGRES_PASSWORD=your_pass \
+  -e POSTGRES_DB=your_db \
+  -p 5432:5432 \
+  postgres:13-alpine
+```
+
+**Option 2: AWS RDS PostgreSQL**
+
+Use the RDS endpoint as `DB_HOST` in your environment variables.
 
 ---
 
@@ -483,8 +570,8 @@ GET /health
 | **Frontend** | React, Nginx, HTML5, CSS3 |
 | **Backend** | Node.js, Express.js, Winston |
 | **Database** | PostgreSQL, pg (node-postgres) |
-| **Containerization** | Docker, Docker Compose |
-| **Cloud Infrastructure** | AWS ECS, AWS EKS, ECR |
+| **Containerization** | Docker, Shell Scripts |
+| **Cloud Infrastructure** | AWS EC2, ECR |
 | **Storage** | Amazon S3, CloudFront |
 | **Monitoring** | CloudWatch, X-Ray |
 | **CI/CD** | GitHub Actions (optional) |
@@ -493,9 +580,107 @@ GET /health
 
 ---
 
+## 🔧 Configuration
+
+### Environment Variables Setup
+
+**All configuration is done via environment variables passed to containers. No .env files are used in production.**
+
+#### For Local Development
+1. Copy `.env.example` to `.env` in each service directory
+2. Update values for your local setup
+3. Use the `start-local.sh` script to run all services
+
+#### For Production (GitHub Actions)
+All values are stored as GitHub Secrets and passed to containers during deployment.
+
+### Required GitHub Secrets
+
+Go to your GitHub repository → Settings → Secrets and variables → Actions → New repository secret
+
+| Secret Name | Description | Example Value |
+|-------------|-------------|---------------|
+| `AWS_ACCESS_KEY_ID` | Your AWS access key ID | `AKIA...` |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS secret access key | `secret...` |
+| `ECR_REGISTRY` | Your ECR repository URI | `123456789.dkr.ecr.ap-south-1.amazonaws.com` |
+| `EC2_HOST` | EC2 instance public IP or DNS | `13.201.9.34` |
+| `EC2_USERNAME` | SSH username for EC2 | `ubuntu` |
+| `EC2_SSH_KEY` | Private SSH key (base64 encoded) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
+| `EC2_PUBLIC_IP` | Public IP for frontend URLs | `13.201.9.34` |
+| `DB_USER` | PostgreSQL username | `postgres` |
+| `DB_PASS` | PostgreSQL password | `your_secure_password` |
+| `DB_NAME` | PostgreSQL database name | `microservices` |
+
+### EC2 Instance Setup
+
+1. **Launch EC2 instance** with Ubuntu 22.04 LTS
+2. **Install Docker**:
+   ```bash
+   sudo apt update
+   sudo apt install docker.io
+   sudo systemctl start docker
+   sudo systemctl enable docker
+   sudo usermod -aG docker ubuntu
+   ```
+
+3. **Install Nginx**:
+   ```bash
+   sudo apt install nginx
+   sudo systemctl enable nginx
+   ```
+
+4. **Start PostgreSQL container** (run once):
+   ```bash
+   sudo docker run -d --name postgres -p 5432:5432 \
+     -e POSTGRES_USER=your_db_user \
+     -e POSTGRES_PASSWORD=your_db_password \
+     -e POSTGRES_DB=your_db_name \
+     postgres:15
+   ```
+
+5. **Configure Security Groups**:
+   - Allow SSH (port 22) from your IP
+   - Allow HTTP (port 80) from anywhere
+   - Allow ports 3001-3005 from EC2 security group (internal only)
+   - Allow PostgreSQL (port 5432) from EC2 security group (internal only)
+
+6. **Generate SSH Key Pair**:
+   ```bash
+   # On your local machine
+   ssh-keygen -t rsa -b 4096 -C "your-email@example.com"
+   ssh-copy-id ubuntu@your-ec2-ip
+   
+   # Get private key for GitHub secret (base64 encoded)
+   cat ~/.ssh/id_rsa | base64 -w 0
+   ```
+
+### Architecture Overview
+
+```
+┌─────────────────┐    ┌─────────────────┐
+│   Nginx Proxy   │    │   Containers    │
+│   (Port 80)     │    │   (Internal)    │
+│                 │    │                 │
+│ / → frontend    │────▶│ Frontend:80    │
+│ /api/* → APIs   │    │ ServiceA:3001  │
+└─────────────────┘    │ ServiceB:3002  │
+                       │ ServiceC:3003  │
+                       │ ServiceD:3004  │
+                       │ ServiceE:3005  │
+                       │ Postgres:5432  │
+                       └─────────────────┘
+```
+
+- **Nginx Proxy**: Runs on EC2 host, routes requests to containers
+- **Container Communication**: All containers communicate via `localhost`
+- **Frontend**: Runs on port 80 internally, served via nginx on port 80
+- **Services**: Run on ports 3001-3005, accessible via nginx proxy
+
+---
+
 ## 🎓 Best Practices
 
-- ✅ **Environment Variables**: All configuration through `.env` files
+- ✅ **Environment Variables**: All configuration through container environment variables
 - ✅ **Health Checks**: Every service has `/health` endpoint
 - ✅ **Graceful Shutdown**: Proper SIGTERM handling
 - ✅ **Logging**: Structured logging with correlation IDs
@@ -511,7 +696,8 @@ GET /health
 > ⚠️ **Important Configuration Rules:**
 > - All React environment variables **must** start with `REACT_APP_`
 > - Backend services require `DB_*` and `NEXT_SERVICE_URL` variables
-> - Update `.env` files before deployment to production
+> - For local development, copy `.env.example` to `.env` in each service
+> - For production, all configuration is done via GitHub Secrets
 > - Never commit `.env` files to version control
 
 > 💡 **Performance Tips:**

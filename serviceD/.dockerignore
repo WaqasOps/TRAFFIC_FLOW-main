@@ -9,4 +9,4 @@ coverage
 *.sublime-project
 *.sublime-workspace
 *.swp
-*.bak                   
+*.bak                   .env

@@ -116,7 +116,7 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   logger.info(`Service A is running on port ${port}`);
 });
 
