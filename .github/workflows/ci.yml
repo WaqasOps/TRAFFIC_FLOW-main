@@ -155,48 +155,48 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2
+      - name: Deploy All Services to EC2
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
-          set -x
 
-          # 1. Login to ECR
+          # 1. Login to ECR on EC2
           aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-          # 2. Pull latest images
-          sudo docker pull ${{ env.ECR_REGISTRY }}/frontend:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/servicea:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/serviceb:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/servicec:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/serviced:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/servicee:latest
+          # 2. Pull all latest images
+          for service in frontend servicea serviceb servicec serviced servicee; do
+            sudo docker pull ${{ env.ECR_REGISTRY }}/$service:latest
+          done
 
-          # 3. Ensure network exists
+          # 3. Network setup
           sudo docker network create appnet || true
 
-          # 4. FIX: Stop and remove the 'auth' container
-          sudo docker rm -f auth || true
+          # 4. Stop and Remove existing containers
+          sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
 
-          # 5. Run new container with environment variables injected
-          sudo docker run -d \
-            --name auth \
-            --network appnet \
-            --restart always \
-            -p 3001:3001 \
-            -e DB_HOST=${{ secrets.DB_HOST }} \
-            -e DB_PORT=${{ secrets.DB_PORT }} \
-            -e DB_USER=${{ secrets.DB_USER }} \
-            -e DB_PASS=${{ secrets.DB_PASS }} \
-            -e DB_NAME=${{ secrets.DB_NAME }} \
-            -e SERVICE_NAME=serviceA \
-            -e SERVICE_PORT=3001 \
-            -e PORT=3001 \
-            -e SERVICE_B_URL=http://serviceb:3002/serviceB \
-            -e NODE_ENV=development \
-            -e LOG_LEVEL=debug \
+          # 5. Run Backend Services (A to E)
+          # Service A
+          sudo docker run -d --name servicea --network appnet --restart always -p 3001:3001 \
+            -e DB_HOST=${{ secrets.DB_HOST }} -e DB_PORT=${{ secrets.DB_PORT }} \
+            -e DB_USER=${{ secrets.DB_USER }} -e DB_PASS=${{ secrets.DB_PASS }} \
+            -e DB_NAME=${{ secrets.DB_NAME }} -e SERVICE_B_URL=http://serviceb:3002/serviceB \
             ${{ env.ECR_REGISTRY }}/servicea:latest
 
-          # 6. Optional: Cleanup old images
+          # Service B
+          sudo docker run -d --name serviceb --network appnet --restart always -p 3002:3002 \
+            -e NEXT_SERVICE_URL=http://servicec:3003/serviceC \
+            ${{ env.ECR_REGISTRY }}/serviceb:latest
+
+          # Service C, D, E (Isi tarah baqi bhi add karein)
+          sudo docker run -d --name servicec --network appnet -p 3003:3003 ${{ env.ECR_REGISTRY }}/servicec:latest
+          sudo docker run -d --name serviced --network appnet -p 3004:3004 ${{ env.ECR_REGISTRY }}/serviced:latest
+          sudo docker run -d --name servicee --network appnet -p 3005:3005 ${{ env.ECR_REGISTRY }}/servicee:latest
+
+          # 6. Run Frontend
+          sudo docker run -d --name frontend --network appnet --restart always -p 80:80 \
+            -e REACT_APP_SERVICE_A_URL=http://${{ secrets.EC2_HOST }}:3001 \
+            ${{ env.ECR_REGISTRY }}/frontend:latest
+
+          # 7. Cleanup
           sudo docker image prune -f
           EOF
