@@ -61,9 +61,9 @@ jobs:
         with:
           images: ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}
           tags: |
+            type=raw,value=${{ github.sha }}
             type=ref,event=branch
             type=ref,event=pr
-            type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and Push Docker image
@@ -161,4 +161,4 @@ jobs:
 
             # Health check
             sleep 30
-            curl -f http://localhost/health || exit 1
+            curl -f http://localhost/api/serviceA/ || exit 1

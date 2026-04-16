@@ -19,13 +19,13 @@ function App() {
 
   // Read configuration from .env
   const config = {
-    serviceAUrl: process.env.REACT_APP_SERVICE_A_URL,
+    serviceAUrl: process.env.REACT_APP_SERVICE_A_URL || '/api/serviceA/',
     healthUrls: {
-      serviceA: process.env.REACT_APP_SERVICE_A_HEALTH,
-      serviceB: process.env.REACT_APP_SERVICE_B_HEALTH,
-      serviceC: process.env.REACT_APP_SERVICE_C_HEALTH,
-      serviceD: process.env.REACT_APP_SERVICE_D_HEALTH,
-      serviceE: process.env.REACT_APP_SERVICE_E_HEALTH,
+      serviceA: process.env.REACT_APP_SERVICE_A_HEALTH || '/api/serviceA/health',
+      serviceB: process.env.REACT_APP_SERVICE_B_HEALTH || '/api/serviceB/health',
+      serviceC: process.env.REACT_APP_SERVICE_C_HEALTH || '/api/serviceC/health',
+      serviceD: process.env.REACT_APP_SERVICE_D_HEALTH || '/api/serviceD/health',
+      serviceE: process.env.REACT_APP_SERVICE_E_HEALTH || '/api/serviceE/health',
     },
     timeout: parseInt(process.env.REACT_APP_REQUEST_TIMEOUT || '15000'),
     debug: process.env.REACT_APP_ENABLE_DEBUG === 'true'
