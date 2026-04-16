@@ -147,11 +147,11 @@ jobs:
             # 1. ECR Login
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             
-            # 2. Cleanup (Purane containers ko delete karna)
+            # 2. Cleanup
             sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres || true
             sudo docker network create appnet || true
             
-            # 3. Database
+            # 3. Database (Master Credentials)
             sudo docker run -d --name postgres --network appnet -p 5432:5432 \
               -e POSTGRES_USER=postgres \
               -e POSTGRES_PASSWORD=postgres \
@@ -166,7 +166,7 @@ jobs:
               -e SERVICE_B_URL=http://serviceb:3002/serviceB \
               ${{ secrets.ECR_REGISTRY }}/servicea:latest
 
-            # 5. Service B (Jo gayab thi - Added back)
+            # 5. Service B
             sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
               -e SERVICE_C_URL=http://servicec:3003/serviceC \
@@ -189,7 +189,7 @@ jobs:
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
               ${{ secrets.ECR_REGISTRY }}/servicee:latest
             
-            # 9. Frontend (Port 80 aur saare Health Check URLs add kar diye taaki crash na ho)
+            # 9. Frontend (Port 80)
             sudo docker run -d --name frontend --network appnet -p 80:80 \
               -e REACT_APP_SERVICE_A_URL=http://13.201.9.34:3001/serviceA \
               -e REACT_APP_SERVICE_A_HEALTH=http://13.201.9.34:3001/health \
@@ -198,15 +198,16 @@ jobs:
               -e REACT_APP_SERVICE_D_HEALTH=http://13.201.9.34:3004/health \
               -e REACT_APP_SERVICE_E_HEALTH=http://13.201.9.34:3005/health \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
+            
+            sudo docker image prune -f
+          
+            
+         
+   
+         
         
 
             
-            # 6. Frontend
-            sudo docker run -d --name frontend --network appnet -p 80:80 \
-              -e REACT_APP_SERVICE_A_URL=http://13.201.9.34:3001 \
-              ${{ secrets.ECR_REGISTRY }}/frontend:latest
-            
-            sudo docker image prune -f
 
   
 
