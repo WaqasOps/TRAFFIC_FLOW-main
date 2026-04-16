@@ -222,34 +222,4 @@ jobs:
 
 
 
-
-             #FRONTEND-container
-
-
-          # Stop and remove the existing container if it exists
-          sudo docker stop frontend || true
-          sudo docker rm frontend || true
-
-
-          # Ensure Docker network exists
-          sudo docker network inspect appnet >/dev/null 2>&1 || sudo docker network create appnet
-          # Run new container without environment variables first
-          sudo docker run -d --name frontend -p 5173:5173 --network appnet ${{ secrets.ECR_URL }}:latest
-
-
-          # Create environment file inside EC2
-          cat <<EOT > /home/ubuntu/.env
-          VITE_API_URL=${{ secrets.VITE_API_URL }}
-          EOT
-
-
-          # Copy environment file into the running container
-          sudo docker cp /home/ubuntu/.env frontend:/app/.env
-
-
-          # Restart the container to load environment variables
-          sudo docker restart frontend
-
-
-          sudo docker image prune -af
-          EOF
+#
