@@ -186,33 +186,91 @@ jobs:
           sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviced:latest
           sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
-          #create post gres container
-
-          # 3. Setup Network and Volume
-          sudo docker network create appnet 2>/dev/null || true
-          sudo docker volume create postgres-data 2>/dev/null || true
-
-          # 4. Remove old postgres
-          sudo docker rm -f postgres 2>/dev/null || true
-
-          # run new postgres container
-          #sudo docker run -d --name postgres -p 5432:5432 --network appnet -e POSTGRES_USER=${{ secrets.DB_USER }} -e POSTGRES_PASSWORD=${{ secrets.DB_PASS }} -e POSTGRES_DB=${{ secrets.DB_NAME }} -v postgres-data:/var/lib/postgresql/data postgres:latest
-          sudo docker rm -f postgres 2>/dev/null || true
-
-          sudo docker run -d \
-          --name postgres \
-          -p 5432:5432 \
-          --network appnet \
-          -e POSTGRES_USER=${{ secrets.DB_USER }} \
-          -e POSTGRES_PASSWORD=${{ secrets.DB_PASS }} \
-          -e POSTGRES_DB=${{ secrets.DB_NAME }} \
-          -v postgres-data:/var/lib/postgresql/data \
-          postgres:latest
+          #create container serviceA
 
 
-          # restart the container to load environment variables
-          sudo docker restart postgres
+          # Stop and remove the existing container if it exists
+          sudo docker stop servicea || true
+            sudo docker rm servicea || true
 
-          # 6. Cleanup
-          sudo docker image prune -f
+
+            
+            # Run new container without environment variables first
+            sudo docker run -d --name auth -p 3001:3001 --network appnet ${{ secrets.SERVICEA_REPOSITORY }}:latest
+
+
+            # Create environment file inside EC2
+            cat <<EOT > /home/ubuntu/.env
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASS=${{ secrets.DB_PASS }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            SERVICE_NAME=serviceA
+            SERVICE_PORT=3001
+            PORT=3001
+            SERVICE_B_URL=http://serviceb:3002/serviceB
+            NODE_ENV=development
+            LOG_LEVEL=debug                     # Logging level (debug/info/warn/error) 
+
+            EOT
+
+
+            # Copy environment file into the running container
+            sudo docker cp /home/ubuntu/.env auth:/app/.env
+
+
+            # Restart the container to load environment variables
+            sudo docker restart auth
+
+
+            sudo docker image prune -af
+        
+
+
+            #Employees-container
+
+
+            # Stop and remove the existing container if it exists
+            sudo docker stop employees || true
+            sudo docker rm employees || true
+
+  
+
+
+
+
+
+
+
+
+             #FRONTEND-container
+
+
+          # Stop and remove the existing container if it exists
+          sudo docker stop frontend || true
+          sudo docker rm frontend || true
+
+
+          # Ensure Docker network exists
+          sudo docker network inspect appnet >/dev/null 2>&1 || sudo docker network create appnet
+          # Run new container without environment variables first
+          sudo docker run -d --name frontend -p 5173:5173 --network appnet ${{ secrets.ECR_URL }}:latest
+
+
+          # Create environment file inside EC2
+          cat <<EOT > /home/ubuntu/.env
+          VITE_API_URL=${{ secrets.VITE_API_URL }}
+          EOT
+
+
+          # Copy environment file into the running container
+          sudo docker cp /home/ubuntu/.env frontend:/app/.env
+
+
+          # Restart the container to load environment variables
+          sudo docker restart frontend
+
+
+          sudo docker image prune -af
           EOF
