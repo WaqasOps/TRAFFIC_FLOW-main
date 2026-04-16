@@ -12,14 +12,11 @@ env:
 permissions:
   contents: read
 
+# ================= BUILD & PUSH =================
 jobs:
-  # -------------------- BUILD & PUSH IMAGES --------------------
   build-and-push:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
-    outputs:
-      image-tags: ${{ steps.meta.outputs.tags }}
 
     strategy:
       matrix:
@@ -52,113 +49,104 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}
-          tags: |
-            type=raw,value=${{ github.sha }}
-            type=ref,event=branch
-            type=ref,event=pr
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and Push Docker image
+      - name: Build & Push Image
         uses: docker/build-push-action@v5
         with:
           context: ./${{ matrix.folder }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: |
+            ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
 
-  # -------------------- DEPLOYMENT --------------------
+# ================= DEPLOY =================
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+      # ✅ FIXED SSH SETUP (IMPORTANT)
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      # ✅ DEBUG (REMOVE AFTER FIX)
+      - name: Test SSH Connection
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo SSH SUCCESS"
 
       - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            # Set environment variables
-            export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
-            export DB_USER=${{ secrets.DB_USER }}
-            export DB_PASS=${{ secrets.DB_PASS }}
-            export DB_NAME=${{ secrets.DB_NAME }}
-            export EC2_PUBLIC_IP=${{ secrets.EC2_HOST }}
-            export IMAGE_TAG=${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
 
-            # ECR Login
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+          set -e
 
-            # Cleanup old containers (keep postgres running)
-            sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
-            sudo docker network create appnet || true
-            
-            # Ensure postgres is connected to appnet
-            sudo docker network connect appnet postgres || true
+          export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
+          export DB_USER=${{ secrets.DB_USER }}
+          export DB_PASS=${{ secrets.DB_PASS }}
+          export DB_NAME=${{ secrets.DB_NAME }}
+          export IMAGE_TAG=${{ github.sha }}
 
-            # Note: Database container is already running on EC2
-            
-            # Services
-            sudo docker run -d --name servicea --network appnet -p 3001:3001 \
-              -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS -e DB_PORT=5432 \
-              -e SERVICE_B_URL=http://serviceb:3002/serviceB \
-              $ECR_REGISTRY/servicea:$IMAGE_TAG
+          echo "🔐 Logging into ECR..."
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
-            sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
-              -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS -e DB_PORT=5432 \
-              -e SERVICE_C_URL=http://servicec:3003/serviceC \
-              $ECR_REGISTRY/serviceb:$IMAGE_TAG
+          echo "🧹 Cleaning old containers..."
+          sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
 
-            sudo docker run -d --name servicec --network appnet -p 3003:3003 \
-              -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS -e DB_PORT=5432 \
-              -e SERVICE_D_URL=http://serviced:3004/serviceD \
-              $ECR_REGISTRY/servicec:$IMAGE_TAG
+          echo "🌐 Creating network..."
+          sudo docker network create appnet || true
 
-            sudo docker run -d --name serviced --network appnet -p 3004:3004 \
-              -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS -e DB_PORT=5432 \
-              -e SERVICE_E_URL=http://servicee:3005/serviceE \
-              $ECR_REGISTRY/serviced:$IMAGE_TAG
+          echo "🔗 Connecting postgres..."
+          sudo docker network connect appnet postgres || true
 
-            sudo docker run -d --name servicee --network appnet -p 3005:3005 \
-              -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS -e DB_PORT=5432 \
-              $ECR_REGISTRY/servicee:$IMAGE_TAG
-            
-            # Frontend (exposed on port 80)
-            sudo docker run -d --name frontend --network appnet -p 80:80 \
-              -e REACT_APP_SERVICE_A_URL=/api/serviceA/ \
-              -e REACT_APP_SERVICE_A_HEALTH=/api/serviceA/health \
-              -e REACT_APP_SERVICE_B_HEALTH=/api/serviceB/health \
-              -e REACT_APP_SERVICE_C_HEALTH=/api/serviceC/health \
-              -e REACT_APP_SERVICE_D_HEALTH=/api/serviceD/health \
-              -e REACT_APP_SERVICE_E_HEALTH=/api/serviceE/health \
-              -e REACT_APP_REQUEST_TIMEOUT=15000 \
-              -e REACT_APP_ENABLE_DEBUG=false \
-              $ECR_REGISTRY/frontend:$IMAGE_TAG
+          echo "🚀 Starting services..."
 
-            # Health check
-            sleep 30
-            curl -f http://localhost/api/serviceA/ || exit 1
+          sudo docker run -d --name servicea --network appnet -p 3001:3001 \
+            -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
+            -e SERVICE_B_URL=http://serviceb:3002/serviceB \
+            $ECR_REGISTRY/servicea:$IMAGE_TAG
+
+          sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
+            -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
+            -e SERVICE_C_URL=http://servicec:3003/serviceC \
+            $ECR_REGISTRY/serviceb:$IMAGE_TAG
+
+          sudo docker run -d --name servicec --network appnet -p 3003:3003 \
+            -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
+            -e SERVICE_D_URL=http://serviced:3004/serviceD \
+            $ECR_REGISTRY/servicec:$IMAGE_TAG
+
+          sudo docker run -d --name serviced --network appnet -p 3004:3004 \
+            -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
+            -e SERVICE_E_URL=http://servicee:3005/serviceE \
+            $ECR_REGISTRY/serviced:$IMAGE_TAG
+
+          sudo docker run -d --name servicee --network appnet -p 3005:3005 \
+            -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
+            $ECR_REGISTRY/servicee:$IMAGE_TAG
+
+          echo "🌍 Starting frontend..."
+
+          sudo docker run -d --name frontend --network appnet -p 80:80 \
+            -e REACT_APP_SERVICE_A_URL=/api/serviceA/ \
+            -e REACT_APP_REQUEST_TIMEOUT=15000 \
+            $ECR_REGISTRY/frontend:$IMAGE_TAG
+
+          echo "⏳ Waiting for services..."
+          sleep 30
+
+          echo "🧪 Health check..."
+          curl -f http://localhost:3001/health || exit 1
+
+          echo "✅ Deployment successful!"
+
+          EOF
