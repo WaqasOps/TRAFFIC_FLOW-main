@@ -87,87 +87,20 @@
 
 
 
-name: CI - Build & Push to ECR
-
-on:
-  push:
-    branches: ["develop"]
-
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        include:
-          - service: servicea
-            folder: serviceA
-          - service: serviceb
-            folder: serviceB
-          - service: servicec
-            folder: serviceC
-          - service: serviced
-            folder: serviceD
-          - service: servicee
-            folder: serviceE
-          - service: frontend
-            folder: frontend
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
-
-      - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region ap-south-1 | \
-          docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-      - name: Build Docker image
-        run: |
-          docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
-      - name: Tag image
-        run: |
-          docker tag ${{ matrix.service }}:latest ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
-      - name: Push to ECR
-        run: |
-          docker push ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
-
-
-
-#------------------Deploy EC2--------------------
-   
-  deploy:
+deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
     env:
       AWS_REGION: ap-south-1
-      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
 
     steps:
-
       - name: Setup SSH
         run: |
-          # Create SSH directory
           mkdir -p ~/.ssh
-
-          # Add private key
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-
-          # Set correct permissions
           chmod 600 ~/.ssh/id_rsa
-
-          # Add EC2 host to known_hosts (avoid prompt)
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || echo "ssh-keyscan failed"
-
-          # Verify SSH connection (optional debug)
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} "echo SSH Connected"
-
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to EC2
         run: |
@@ -176,50 +109,41 @@ jobs:
           set -x
 
           # 1. Login to ECR
-          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
           # 2. Pull latest images
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/frontend:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicea:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviceb:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicec:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviced:latest
-          sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicee:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/frontend:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/servicea:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/serviceb:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/servicec:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/serviced:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/servicee:latest
 
-          #create container serviceA
+          # 3. Ensure network exists
+          sudo docker network create appnet || true
 
+          # 4. FIX: Stop and remove the 'auth' container (Matching the name used in 'run')
+          sudo docker rm -f auth || true
 
-          # Stop and remove the existing container if it exists
-          sudo docker stop servicea || true
-            sudo docker rm servicea || true
+          # 5. Run new container with environment variables injected
+          sudo docker run -d \
+            --name auth \
+            --network appnet \
+            --restart always \
+            -p 3001:3001 \
+            -e DB_HOST=${{ secrets.DB_HOST }} \
+            -e DB_PORT=${{ secrets.DB_PORT }} \
+            -e DB_USER=${{ secrets.DB_USER }} \
+            -e DB_PASS=${{ secrets.DB_PASS }} \
+            -e DB_NAME=${{ secrets.DB_NAME }} \
+            -e SERVICE_NAME=serviceA \
+            -e SERVICE_PORT=3001 \
+            -e PORT=3001 \
+            -e SERVICE_B_URL=http://serviceb:3002/serviceB \
+            -e NODE_ENV=development \
+            -e LOG_LEVEL=debug \
+            ${{ env.ECR_REGISTRY }}/servicea:latest
 
-
-            
-            # Run new container without environment variables first
-            sudo docker run -d --name auth -p 3001:3001 --network appnet ${{ secrets.SERVICEA_REPOSITORY }}:latest
-
-
-            # Create environment file inside EC2
-            cat <<EOT > /home/ubuntu/.env
-            DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            DB_USER=${{ secrets.DB_USER }}
-            DB_PASS=${{ secrets.DB_PASS }}
-            DB_NAME=${{ secrets.DB_NAME }}
-            SERVICE_NAME=serviceA
-            SERVICE_PORT=3001
-            PORT=3001
-            SERVICE_B_URL=http://serviceb:3002/serviceB
-            NODE_ENV=development
-            LOG_LEVEL=debug                     # Logging level (debug/info/warn/error) 
-
-            EOT
-
-
-
-
-
-
-
-
-#
+          # 6. Optional: Cleanup old unused images to save space
+          sudo docker image prune -f
+          EOF
