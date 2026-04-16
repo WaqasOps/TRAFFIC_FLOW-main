@@ -199,19 +199,9 @@ jobs:
           sudo docker run -d --name postgres -p 5432:5432 --network appnet -e DB_USER=${{ secrets.DB_USER }} -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} -e DB_NAME=${{ secrets.DB_NAME }} -v postgres-data:/var/lib/postgresql/data postgres:latest
 
 
-
-          # # 5. Run Postgres
-          # sudo docker run -d \
-          # --name postgres \
-          # --network appnet \
-          # -p 5432:5432 \
-          # -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
-          # -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
-          # -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
-          # -v postgres-data:/var/lib/postgresql/data \
-          # postgres:latest
+          # restart the container to load environment variables
+          sudo docker restart postgres
 
           # 6. Cleanup
           sudo docker image prune -f
-
           EOF
