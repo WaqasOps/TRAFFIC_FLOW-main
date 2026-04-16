@@ -153,18 +153,22 @@ jobs:
 
       - name: Setup SSH
         run: |
-          # Create the .ssh directory
+          # Create SSH directory
           mkdir -p ~/.ssh
-          
-          # Save the private key from secrets to a file
+
+          # Add private key
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          
-          # Set strict permissions (SSH will fail if the key is too 'open')
+
+          # Set correct permissions
           chmod 600 ~/.ssh/id_rsa
-          
-          # Scan the EC2 instance's host key and add it to known_hosts
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-          
+
+          # Add EC2 host to known_hosts (avoid prompt)
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || echo "ssh-keyscan failed"
+
+          # Verify SSH connection (optional debug)
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} "echo SSH Connected"
+
+
       - name: Deploy to EC2
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
