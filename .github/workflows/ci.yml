@@ -51,7 +51,7 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Image
+      - name: Build & Push Images
         uses: docker/build-push-action@v5
         with:
           context: ./${{ matrix.folder }}
@@ -68,27 +68,30 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # ✅ FIXED SSH SETUP (IMPORTANT)
-      - name: Setup SSH key
+      # ✅ SSH SETUP (FIXED)
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # ✅ DEBUG (REMOVE AFTER FIX)
+      # ✅ TEST SSH (VERY IMPORTANT)
       - name: Test SSH Connection
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo SSH SUCCESS"
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH SUCCESS"
 
+      # ✅ DEPLOY
       - name: Deploy to EC2
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
 
           set -e
+
+          echo "🚀 Starting deployment..."
 
           export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
           export DB_USER=${{ secrets.DB_USER }}
@@ -96,16 +99,16 @@ jobs:
           export DB_NAME=${{ secrets.DB_NAME }}
           export IMAGE_TAG=${{ github.sha }}
 
-          echo "🔐 Logging into ECR..."
+          echo "🔐 Login to ECR"
           aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
-          echo "🧹 Cleaning old containers..."
+          echo "🧹 Removing old containers"
           sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
 
-          echo "🌐 Creating network..."
+          echo "🌐 Creating network"
           sudo docker network create appnet || true
 
-          echo "🔗 Connecting postgres..."
+          echo "🔗 Connecting postgres"
           sudo docker network connect appnet postgres || true
 
           echo "🚀 Starting services..."
@@ -138,7 +141,13 @@ jobs:
 
           sudo docker run -d --name frontend --network appnet -p 80:80 \
             -e REACT_APP_SERVICE_A_URL=/api/serviceA/ \
+            -e REACT_APP_SERVICE_A_HEALTH=/api/serviceA/health \
+            -e REACT_APP_SERVICE_B_HEALTH=/api/serviceB/health \
+            -e REACT_APP_SERVICE_C_HEALTH=/api/serviceC/health \
+            -e REACT_APP_SERVICE_D_HEALTH=/api/serviceD/health \
+            -e REACT_APP_SERVICE_E_HEALTH=/api/serviceE/health \
             -e REACT_APP_REQUEST_TIMEOUT=15000 \
+            -e REACT_APP_ENABLE_DEBUG=false \
             $ECR_REGISTRY/frontend:$IMAGE_TAG
 
           echo "⏳ Waiting for services..."
@@ -147,6 +156,6 @@ jobs:
           echo "🧪 Health check..."
           curl -f http://localhost:3001/health || exit 1
 
-          echo "✅ Deployment successful!"
+          echo "✅ Deployment Successful!"
 
           EOF
