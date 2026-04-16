@@ -216,27 +216,6 @@ jobs:
             EOT
 
 
-            # Copy environment file into the running container
-            sudo docker cp /home/ubuntu/.env auth:/app/.env
-
-
-            # Restart the container to load environment variables
-            sudo docker restart auth
-
-
-            sudo docker image prune -af
-        
-
-
-            #Employees-container
-
-
-            # Stop and remove the existing container if it exists
-            sudo docker stop employees || true
-            sudo docker rm employees || true
-
-  
-
 
 
 
