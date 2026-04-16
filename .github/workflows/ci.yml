@@ -144,17 +144,21 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+           script: |
             # ECR Login
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             
-            # Network and Cleanup
+            # Network and Cleanup (Added 'auth' here to fix port 3001 conflict)
             sudo docker network create appnet || true
-            sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres || true
+            sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres auth || true
             
-            # 1. Database (Self-hosted on EC2)
+            # 1. Database
             sudo docker run -d --name postgres --network appnet -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15
             
-            # 2. Backend Services (A to E)
+            # Intezar karein ke DB ready ho jaye
+            sleep 10
+            
+            # 2. Backend Services
             sudo docker run -d --name servicea --network appnet -p 3001:3001 \
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres \
               -e SERVICE_B_URL=http://serviceb:3002/serviceB \
