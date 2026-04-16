@@ -105,11 +105,7 @@ jobs:
           echo "🧹 Removing old containers"
           sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
 
-          echo "🌐 Creating network"
-          sudo docker network create appnet || true
 
-          echo "🔗 Connecting postgres"
-          sudo docker network connect appnet postgres || true
 
           echo "🚀 Starting services..."
 
