@@ -88,7 +88,7 @@ name: CI/CD - Build, Push & Deploy
 
 on:
   push:
-    branches: ["develop"] # Check karein ke aap develop branch par hi push kar rahe hain
+    branches: ["develop"] # Ye trigger hai jo miss ho raha tha
 
 jobs:
   build-and-push:
@@ -132,7 +132,6 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$SERVICE:latest ./$FOLDER
           docker push $ECR_REGISTRY/$SERVICE:latest
-          # ... build-and-push job same rahega ...
 
   deploy:
     runs-on: ubuntu-latest
@@ -152,10 +151,10 @@ jobs:
             sudo docker network create appnet || true
             sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres || true
             
-            # 1. Database (Agar EC2 pe hi chala rahe hain)
+            # 1. Database (Self-hosted on EC2)
             sudo docker run -d --name postgres --network appnet -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15
             
-            # 2. Services (A to E)
+            # 2. Backend Services (A to E)
             sudo docker run -d --name servicea --network appnet -p 3001:3001 \
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres \
               -e SERVICE_B_URL=http://serviceb:3002/serviceB \
@@ -166,7 +165,7 @@ jobs:
             sudo docker run -d --name serviced --network appnet -p 3004:3004 ${{ secrets.ECR_REGISTRY }}/serviced:latest
             sudo docker run -d --name servicee --network appnet -p 3005:3005 ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
-            # 3. Frontend (Important: Iska port 80 hona chahiye)
+            # 3. Frontend (Port 80)
             sudo docker run -d --name frontend --network appnet -p 80:80 \
               -e REACT_APP_SERVICE_A_URL=http://13.201.9.34:3001 \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
