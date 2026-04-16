@@ -186,6 +186,8 @@ jobs:
           sudo docker pull ${{ secrets.ECR_REGISTRY }}/serviced:latest
           sudo docker pull ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
+          #create post gres container
+
           # 3. Setup Network and Volume
           sudo docker network create appnet 2>/dev/null || true
           sudo docker volume create postgres-data 2>/dev/null || true
@@ -193,16 +195,21 @@ jobs:
           # 4. Remove old postgres
           sudo docker rm -f postgres 2>/dev/null || true
 
-          # 5. Run Postgres
-          sudo docker run -d \
-          --name postgres \
-          --network appnet \
-          -p 5432:5432 \
-          -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
-          -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
-          -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
-          -v postgres-data:/var/lib/postgresql/data \
-          postgres:latest
+          # run new postgres container
+          sudo docker run -d --name postgres -p 5432:5432 --network appnet -e DB_USER=${{ secrets.DB_USER }} -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} -e DB_NAME=${{ secrets.DB_NAME }} -v postgres-data:/var/lib/postgresql/data postgres:latest
+
+
+
+          # # 5. Run Postgres
+          # sudo docker run -d \
+          # --name postgres \
+          # --network appnet \
+          # -p 5432:5432 \
+          # -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+          # -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+          # -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
+          # -v postgres-data:/var/lib/postgresql/data \
+          # postgres:latest
 
           # 6. Cleanup
           sudo docker image prune -f
