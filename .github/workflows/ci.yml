@@ -105,37 +105,41 @@ jobs:
           echo "🧹 Removing old containers"
           sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
 
+          echo "🌐 Creating network"
+          sudo docker network create appnet || true
 
+          echo "🔗 Connecting postgres"
+          sudo docker network connect appnet postgres || true
 
           echo "🚀 Starting services..."
 
-          sudo docker run -it --name servicea --network appnet -p 3001:3001 \
+          sudo docker run -d --name servicea --network appnet -p 3001:3001 \
             -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
             -e SERVICE_B_URL=http://serviceb:3002/serviceB \
             $ECR_REGISTRY/servicea:$IMAGE_TAG
 
-          sudo docker run -it --name serviceb --network appnet -p 3002:3002 \
+          sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
             -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
             -e SERVICE_C_URL=http://servicec:3003/serviceC \
             $ECR_REGISTRY/serviceb:$IMAGE_TAG
 
-          sudo docker run -it --name servicec --network appnet -p 3003:3003 \
+          sudo docker run -d --name servicec --network appnet -p 3003:3003 \
             -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
             -e SERVICE_D_URL=http://serviced:3004/serviceD \
             $ECR_REGISTRY/servicec:$IMAGE_TAG
 
-          sudo docker run -ir --name serviced --network appnet -p 3004:3004 \
+          sudo docker run -d --name serviced --network appnet -p 3004:3004 \
             -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
             -e SERVICE_E_URL=http://servicee:3005/serviceE \
             $ECR_REGISTRY/serviced:$IMAGE_TAG
 
-          sudo docker run -ir --name servicee --network appnet -p 3005:3005 \
+          sudo docker run -d --name servicee --network appnet -p 3005:3005 \
             -e DB_HOST=postgres -e DB_NAME=$DB_NAME -e DB_USER=$DB_USER -e DB_PASS=$DB_PASS \
             $ECR_REGISTRY/servicee:$IMAGE_TAG
 
           echo "🌍 Starting frontend..."
 
-          sudo docker run -it --name frontend --network appnet -p 80:80 \
+          sudo docker run -d --name frontend --network appnet -p 80:80 \
             -e REACT_APP_SERVICE_A_URL=/api/serviceA/ \
             -e REACT_APP_SERVICE_A_HEALTH=/api/serviceA/health \
             -e REACT_APP_SERVICE_B_HEALTH=/api/serviceB/health \
