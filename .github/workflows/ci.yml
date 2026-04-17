@@ -8,6 +8,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false # Taake agar ek service fail ho to baaki chalti rahein
       matrix:
         include:
           - service: servicea
@@ -63,50 +64,38 @@ jobs:
             # 1. ECR Login
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             
-            # 2. Cleanup (Added 'nginx' and 'auth')
+            # 2. Complete Cleanup
             echo "Cleaning up old containers..."
-            sudo docker rm -f nginx frontend servicea serviceb servicec serviced servicee postgres auth || true
+            sudo docker rm -f nginx frontend servicea serviceb servicec serviced servicee postgres || true
             sudo docker network create appnet || true
             
-            # 3. Database
-            sudo docker run -d --name postgres --network appnet -p 5432:5432 \
-              -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=microservices \
-              postgres:15
-            
-            sleep 10
-            
-            # 4. Microservices (A to E)
+            # 3. Microservices (A to E)
+            # Service A
             sudo docker run -d --name servicea --network appnet -p 3001:3001 \
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
-              -e SERVICE_B_URL=http://serviceb:3002/serviceB \
               ${{ secrets.ECR_REGISTRY }}/servicea:latest
 
+            # Service B
             sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
-              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
-              -e SERVICE_C_URL=http://servicec:3003/serviceC \
               ${{ secrets.ECR_REGISTRY }}/serviceb:latest
 
+            # Service C
             sudo docker run -d --name servicec --network appnet -p 3003:3003 \
-              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
-              -e SERVICE_D_URL=http://serviced:3004/serviceD \
               ${{ secrets.ECR_REGISTRY }}/servicec:latest
 
+            # Service D
             sudo docker run -d --name serviced --network appnet -p 3004:3004 \
-              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
-              -e SERVICE_E_URL=http://servicee:3005/serviceE \
               ${{ secrets.ECR_REGISTRY }}/serviced:latest
 
+            # Service E
             sudo docker run -d --name servicee --network appnet -p 3005:3005 \
-              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
               ${{ secrets.ECR_REGISTRY }}/servicee:latest
             
-            # 5. Frontend (Internal)
-            # Note: Port mapping 80:80 hata di hai taake Nginx port 80 le sakay
+            # 4. Frontend (Internal Only - No Port 80 Mapping)
             sudo docker run -d --name frontend --network appnet \
-              -e REACT_APP_SERVICE_A_URL=http://13.201.9.34:3001/serviceA \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
 
-            # 6. Nginx Reverse Proxy (MAIN ENTRY POINT)
+            # 5. Nginx Reverse Proxy (Port 80 Exposed)
             sudo docker run -d --name nginx --network appnet -p 80:80 \
               ${{ secrets.ECR_REGISTRY }}/nginx:latest
             
