@@ -1,14 +1,99 @@
-name: CI/CD - Build, Push & Deploy with Nginx
+# name: CI - Build and Push Docker Images to ECR
+
+
+# on:
+#   push:
+#     branches: [develop]
+
+# permissions:
+#   contents: read
+#   id-token: write
+
+
+# jobs:
+#   # -------------------- BUILD & PUSH IMAGES --------------------
+#   build-and-push:
+#     name: Build and Push Docker Images to ECR
+#     runs-on: ubuntu-latest
+
+
+#     steps:
+#       # 1️⃣ Checkout
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+
+#       # 2️⃣ Configure AWS credentials
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ secrets.AWS_REGION }}
+
+
+#       # 3️⃣ Login to Amazon ECR
+#       - name: Login to Amazon ECR
+#         id: login-ecr
+#         uses: aws-actions/amazon-ecr-login@v2
+
+
+#       # ---------- FRONTEND ----------
+#       - name: Build and Push frontend
+#         run: |
+#           docker build -t frontend ./frontend
+#           docker tag frontend:latest ${{ secrets.ECR_REGISTRY }}/frontend:latest
+#           docker push ${{ secrets.ECR_REGISTRY }}/frontend:latest
+
+
+#       # ---------- SERVICESA ----------
+#       - name: Build and Push servicesA
+#         run: |
+#           docker build -t servicesa ./serviceA
+#           docker tag servicesa:latest ${{ secrets.ECR_REGISTRY }}/servicea:latest
+#           docker push ${{ secrets.ECR_REGISTRY }}/servicea:latest
+
+
+#       # ---------- SERVICESB ----------
+#       - name: Build and Push servicesB
+#         run: |
+#           docker build -t servicesb ./serviceB
+#           docker tag servicesb:latest ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+#           docker push ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+
+
+#       # ---------- SERVICESC ----------
+#       - name: Build and Push servicesC
+#         run: |
+#           docker build -t servicesc ./serviceC
+#           docker tag servicesc:latest ${{ secrets.ECR_REGISTRY }}/servicec:latest
+#           docker push ${{ secrets.ECR_REGISTRY }}/servicec:latest
+
+
+#       # ---------- SERVICESD ----------
+#       - name: Build and Push servicesD
+#         run: |
+#           docker build -t servicesd ./serviceD
+#           docker tag servicesd:latest ${{ secrets.ECR_REGISTRY }}/serviced:latest
+#           docker push ${{ secrets.ECR_REGISTRY }}/serviced:latest
+
+
+#       # ---------- SERVICESE ----------
+#       - name: Build and Push servicesE
+#         run: |
+#           docker build -t servicese ./serviceE
+#           docker tag servicese:latest ${{ secrets.ECR_REGISTRY }}/servicee:latest
+#           docker push ${{ secrets.ECR_REGISTRY }}/servicee:latest
+name: CI/CD - Build, Push & Deploy
 
 on:
   push:
-    branches: ["develop"]
+    branches: ["develop"] # Ye trigger hai jo miss ho raha tha
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         include:
           - service: servicea
@@ -23,8 +108,6 @@ jobs:
             folder: serviceE
           - service: frontend
             folder: frontend
-          - service: nginx
-            folder: nginx
 
     steps:
       - name: Checkout code
@@ -49,8 +132,7 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$SERVICE:latest ./$FOLDER
           docker push $ECR_REGISTRY/$SERVICE:latest
-
-  deploy: # <--- Ye line bilkul peechay (zero indentation) honi chahiye
+  deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
@@ -64,44 +146,59 @@ jobs:
             # 1. ECR Login
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             
-            # 2. Cleanup
+            # 2. Complete Cleanup (Added 'auth' and 'servicea' fix)
             echo "Cleaning up old containers..."
-            sudo docker rm -f nginx frontend servicea serviceb servicec serviced servicee postgres || true
+            sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres auth || true
             sudo docker network create appnet || true
-
-            # 3. Database (Postgres)
-            sudo docker run -d --name postgres --network appnet \
-              -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=microservices \
+            
+            # 3. Database
+            sudo docker run -d --name postgres --network appnet -p 5432:5432 \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_PASSWORD=postgres \
+              -e POSTGRES_DB=microservices \
               postgres:15
             
-            # 4. Microservices (A to E)
+            sleep 10 # DB ko start hone ka waqt dein
+            
+            # 4. Service A (Ensuring name is 'servicea', NOT 'auth')
             sudo docker run -d --name servicea --network appnet -p 3001:3001 \
               -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
-              -e SERVICE_B_URL=http://serviceb:3002 \
+              -e SERVICE_B_URL=http://serviceb:3002/serviceB \
               ${{ secrets.ECR_REGISTRY }}/servicea:latest
 
+            # 5. Service B
             sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
-              -e SERVICE_C_URL=http://servicec:3003 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_C_URL=http://servicec:3003/serviceC \
               ${{ secrets.ECR_REGISTRY }}/serviceb:latest
 
+            # 6. Service C
             sudo docker run -d --name servicec --network appnet -p 3003:3003 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_D_URL=http://serviced:3004/serviceD \
               ${{ secrets.ECR_REGISTRY }}/servicec:latest
 
+            # 7. Service D
             sudo docker run -d --name serviced --network appnet -p 3004:3004 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_E_URL=http://servicee:3005/serviceE \
               ${{ secrets.ECR_REGISTRY }}/serviced:latest
 
+            # 8. Service E
             sudo docker run -d --name servicee --network appnet -p 3005:3005 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
               ${{ secrets.ECR_REGISTRY }}/servicee:latest
-
-            # 5. Frontend
-            sudo docker run -d --name frontend --network appnet \
-              -e REACT_APP_SERVICE_A_URL=http://13.201.9.34/api/servicea/ \
-              ${{ secrets.ECR_REGISTRY }}/frontend:latest
-
-            # 6. Nginx Gateway
-            sleep 10
-            sudo docker run -d --name nginx --network appnet -p 80:80 \
-              ${{ secrets.ECR_REGISTRY }}/nginx:latest
             
-            # 7. Final Cleanup
+            # 9. Frontend (RE-CHECK PORT 80)
+            # Agar EC2 pe Nginx pehle se chal raha hai toh ye fail hoga. 
+            # Check karein: sudo systemctl stop nginx (agar install hai)
+            sudo docker run -d --name frontend --network appnet -p 80:80 \
+              -e REACT_APP_SERVICE_A_URL=http://13.201.9.34:3001/serviceA \
+              -e REACT_APP_SERVICE_A_HEALTH=http://13.201.9.34:3001/health \
+              -e REACT_APP_SERVICE_B_HEALTH=http://13.201.9.34:3002/health \
+              -e REACT_APP_SERVICE_C_HEALTH=http://13.201.9.34:3003/health \
+              -e REACT_APP_SERVICE_D_HEALTH=http://13.201.9.34:3004/health \
+              -e REACT_APP_SERVICE_E_HEALTH=http://13.201.9.34:3005/health \
+              ${{ secrets.ECR_REGISTRY }}/frontend:latest
+            
             sudo docker image prune -af
