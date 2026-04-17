@@ -66,27 +66,61 @@ jobs:
             
             # 2. Cleanup
             echo "Cleaning up old containers..."
-            # Nginx ko list se nikal diya hai kyunki wo host par manually chal raha hai
             sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres || true
             sudo docker network create appnet || true
 
             # 3. Database (Postgres)
-            sudo docker run -d --name postgres --network appnet \
+            sudo docker run -d --name postgres --network appnet -p 5432:5432 \
               -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=microservices \
+              --restart always \
               postgres:15
+            
+            # Database ko initialize hone ke liye thora waqt dena zaroori hai
+            echo "Waiting for database to be ready..."
+            sleep 15
 
-            # 4. Microservices (Exposing ports so Manual Nginx can talk to them)
-            sudo docker run -d --name servicea --network appnet -p 3001:3001 ${{ secrets.ECR_REGISTRY }}/servicea:latest
-            sudo docker run -d --name serviceb --network appnet -p 3002:3002 ${{ secrets.ECR_REGISTRY }}/serviceb:latest
-            sudo docker run -d --name servicec --network appnet -p 3003:3003 ${{ secrets.ECR_REGISTRY }}/servicec:latest
-            sudo docker run -d --name serviced --network appnet -p 3004:3004 ${{ secrets.ECR_REGISTRY }}/serviced:latest
-            sudo docker run -d --name servicee --network appnet -p 3005:3005 ${{ secrets.ECR_REGISTRY }}/servicee:latest
+            # 4. Microservices (Environment variables ke saath)
+            
+            # Service E
+            sudo docker run -d --name servicee --network appnet -p 3005:3005 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              --restart always \
+              ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
-            # 5. Frontend (Mapped to 8080 to avoid conflict with Manual Nginx on 80)
+            # Service D (Depends on E)
+            sudo docker run -d --name serviced --network appnet -p 3004:3004 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_E_URL=http://servicee:3005/serviceE \
+              --restart always \
+              ${{ secrets.ECR_REGISTRY }}/serviced:latest
+
+            # Service C (Depends on D)
+            sudo docker run -d --name servicec --network appnet -p 3003:3003 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_D_URL=http://serviced:3004/serviceD \
+              --restart always \
+              ${{ secrets.ECR_REGISTRY }}/servicec:latest
+
+            # Service B (Depends on C)
+            sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_C_URL=http://servicec:3003/serviceC \
+              --restart always \
+              ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+
+            # Service A (Depends on B)
+            sudo docker run -d --name servicea --network appnet -p 3001:3001 \
+              -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=postgres -e DB_PASS=postgres -e DB_PORT=5432 \
+              -e SERVICE_B_URL=http://serviceb:3002/serviceB \
+              --restart always \
+              ${{ secrets.ECR_REGISTRY }}/servicea:latest
+
+            # 5. Frontend (Mapped to 8080 for Manual Nginx)
             sudo docker run -d --name frontend --network appnet -p 8080:80 \
               -e REACT_APP_SERVICE_A_URL=http://13.201.9.34/api/servicea/ \
+              --restart always \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
             
-            # 6. Cleanup unused images
+            # 6. Final Cleanup
             sudo docker image prune -af
          
