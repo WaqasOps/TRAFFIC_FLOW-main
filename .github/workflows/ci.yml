@@ -90,13 +90,14 @@ jobs:
             # Service E
             sudo docker run -d --name servicee --network appnet -p 3005:3005 \
               ${{ secrets.ECR_REGISTRY }}/servicee:latest
-            
-            # 4. Frontend (Internal Only - No Port 80 Mapping)
+              # 9. Frontend (Port 80 removed - traffic will go through Nginx)
             sudo docker run -d --name frontend --network appnet \
+              -e REACT_APP_SERVICE_A_URL=http://13.201.9.34/api/servicea/ \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
 
-            # 5. Nginx Reverse Proxy (Port 80 Exposed)
+            # 10. Nginx Reverse Proxy (Exposing Port 80 to the world)
             sudo docker run -d --name nginx --network appnet -p 80:80 \
               ${{ secrets.ECR_REGISTRY }}/nginx:latest
             
+            # Cleanup: Remove unused images to save space on EC2
             sudo docker image prune -af
