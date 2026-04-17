@@ -61,31 +61,32 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # 1. Login
+            # 1. ECR Login
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             
-            # 2. Cleanup (Purana sab khatam)
-            sudo docker rm -f nginx frontend servicea serviceb servicec serviced servicee postgres || true
+            # 2. Cleanup
+            echo "Cleaning up old containers..."
+            # Nginx ko list se nikal diya hai kyunki wo host par manually chal raha hai
+            sudo docker rm -f frontend servicea serviceb servicec serviced servicee postgres || true
             sudo docker network create appnet || true
 
-            # 3. Database
+            # 3. Database (Postgres)
             sudo docker run -d --name postgres --network appnet \
               -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=microservices \
               postgres:15
 
-            # 4. Services (No Public Ports needed for internal communication)
-            sudo docker run -d --name servicea --network appnet ${{ secrets.ECR_REGISTRY }}/servicea:latest
-            sudo docker run -d --name serviceb --network appnet ${{ secrets.ECR_REGISTRY }}/serviceb:latest
-            sudo docker run -d --name servicec --network appnet ${{ secrets.ECR_REGISTRY }}/servicec:latest
-            sudo docker run -d --name serviced --network appnet ${{ secrets.ECR_REGISTRY }}/serviced:latest
-            sudo docker run -d --name servicee --network appnet ${{ secrets.ECR_REGISTRY }}/servicee:latest
+            # 4. Microservices (Exposing ports so Manual Nginx can talk to them)
+            sudo docker run -d --name servicea --network appnet -p 3001:3001 ${{ secrets.ECR_REGISTRY }}/servicea:latest
+            sudo docker run -d --name serviceb --network appnet -p 3002:3002 ${{ secrets.ECR_REGISTRY }}/serviceb:latest
+            sudo docker run -d --name servicec --network appnet -p 3003:3003 ${{ secrets.ECR_REGISTRY }}/servicec:latest
+            sudo docker run -d --name serviced --network appnet -p 3004:3004 ${{ secrets.ECR_REGISTRY }}/serviced:latest
+            sudo docker run -d --name servicee --network appnet -p 3005:3005 ${{ secrets.ECR_REGISTRY }}/servicee:latest
 
-            # 5. Frontend (Port 80 removed from host to avoid conflict)
-            sudo docker run -d --name frontend --network appnet ${{ secrets.ECR_REGISTRY }}/frontend:latest
-
-            # 6. Nginx (THE ONLY GATEWAY)
-            # Sirf ye container Port 80 ko duniya ke liye expose karega
-            sleep 10
-            sudo docker run -d --name nginx --network appnet -p 80:80 ${{ secrets.ECR_REGISTRY }}/nginx:latest
+            # 5. Frontend (Mapped to 8080 to avoid conflict with Manual Nginx on 80)
+            sudo docker run -d --name frontend --network appnet -p 8080:80 \
+              -e REACT_APP_SERVICE_A_URL=http://13.201.9.34/api/servicea/ \
+              ${{ secrets.ECR_REGISTRY }}/frontend:latest
             
+            # 6. Cleanup unused images
             sudo docker image prune -af
+         
