@@ -61,84 +61,77 @@ jobs:
             ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
 
 # ================= DEPLOY =================
- # ✅ DEPLOY (FIXED FORMATTING)
-- name: Deploy to EC2
-  run: |
-    ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-    set -e
+ #  DEPLOY
+      - name: Deploy to EC2
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
 
-    echo "🚀 Starting deployment..."
-    export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
-    export IMAGE_TAG=${{ github.sha }}
+          set -e
 
-    echo "🔐 Login to ECR"
-    aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+          echo " Starting deployment..."
 
-    echo "🧹 Removing old containers"
-    sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
+          export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
+          export DB_USER=${{ secrets.DB_USER }}
+          export DB_PASS=${{ secrets.DB_PASS }}
+          export DB_NAME=${{ secrets.DB_NAME }}
+          export IMAGE_TAG=${{ github.sha }}
 
-    echo "🌐 Creating network"
-    sudo docker network create appnet || true
+          echo " Login to ECR"
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
-    echo "🔗 Connecting postgres"
-    # Agar postgres pehle se connected hai to error ignore karein
-    sudo docker network connect appnet postgres || true
+          echo " Removing old containers"
+          sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
 
-    echo "🚀 Starting services..."
+          echo " Creating network"
+          sudo docker network create appnet || true
 
-    # Service A
-    sudo docker run -d --name servicea --network appnet -p 3001:3001 \
-      -e DB_HOST=postgres \
-      -e DB_PORT=5432 \
-      -e DB_NAME=microservices \
-      -e DB_USER=admin \
-      -e DB_PASS=admin \
-      -e SERVICE_B_URL=http://serviceb:3002/serviceB \
-      $ECR_REGISTRY/servicea:$IMAGE_TAG
+          echo "🔗 Connecting postgres"
+          sudo docker network connect appnet postgres || true
 
-    # Service B
-    sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
-      -e DB_HOST=postgres \
-      -e DB_PORT=5432 \
-      -e DB_NAME=microservices \
-      -e DB_USER=admin \
-      -e DB_PASS=admin \
-      -e SERVICE_C_URL=http://servicec:3003/serviceC \
-      $ECR_REGISTRY/serviceb:$IMAGE_TAG
+          echo " Starting services..."
 
-    # Service C
-    sudo docker run -d --name servicec --network appnet -p 3003:3003 \
-      -e DB_HOST=postgres \
-      -e DB_PORT=5432 \
-      -e DB_NAME=microservices \
-      -e DB_USER=admin \
-      -e DB_PASS=admin \
-      -e SERVICE_D_URL=http://serviced:3004/serviceD \
-      $ECR_REGISTRY/servicec:$IMAGE_TAG
+          # Service A (Fixed Spaces)
+          sudo docker run -d --name servicea --network appnet -p 3001:3001 \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_B_URL=http://serviceb:3002/serviceB \
+            $ECR_REGISTRY/servicea:$IMAGE_TAG
 
-    # Service D
-    sudo docker run -d --name serviced --network appnet -p 3004:3004 \
-      -e DB_HOST=postgres \
-      -e DB_PORT=5432 \
-      -e DB_NAME=microservices \
-      -e DB_USER=admin \
-      -e DB_PASS=admin \
-      -e SERVICE_E_URL=http://servicee:3005/serviceE \
-      $ECR_REGISTRY/serviced:$IMAGE_TAG
+          # Service B
+          sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_C_URL=http://servicec:3003/serviceC \
+            $ECR_REGISTRY/serviceb:$IMAGE_TAG
 
-    # Service E
-    sudo docker run -d --name servicee --network appnet -p 3005:3005 \
-      -e DB_HOST=postgres \
-      -e DB_PORT=5432 \
-      -e DB_NAME=microservices \
-      -e DB_USER=admin \
-      -e DB_PASS=admin \
-      $ECR_REGISTRY/servicee:$IMAGE_TAG
+          # Service C
+          sudo docker run -d --name servicec --network appnet -p 3003:3003 \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_D_URL=http://serviced:3004/serviceD \
+            $ECR_REGISTRY/servicec:$IMAGE_TAG
 
-    echo "🌍 Starting frontend..."
-    sudo docker run -d --name frontend --network appnet -p 80:80 \
-      -e REACT_APP_SERVICE_A_URL=/api/servicea/ \
-      $ECR_REGISTRY/frontend:$IMAGE_TAG
+          # Service D (Fixed Spaces)
+          sudo docker run -d --name serviced --network appnet -p 3004:3004 \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_E_URL=http://servicee:3005/serviceE \
+            $ECR_REGISTRY/serviced:$IMAGE_TAG
 
-    echo "✅ Deployment Successful!"
-    EOF
+          # Service E (Added missing DB_PORT)
+          sudo docker run -d --name servicee --network appnet -p 3005:3005 \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            $ECR_REGISTRY/servicee:$IMAGE_TAG
+
+          echo " Starting frontend..."
+
+          sudo docker run -d --name frontend --network appnet -p 80:80 \
+            -e REACT_APP_SERVICE_A_URL=/api/servicea/ \
+            -e REACT_APP_SERVICE_A_HEALTH=/api/serviceA/health \
+            -e REACT_APP_SERVICE_B_HEALTH=/api/serviceB/health \
+            -e REACT_APP_SERVICE_C_HEALTH=/api/serviceC/health \
+            -e REACT_APP_SERVICE_D_HEALTH=/api/serviceD/health \
+            -e REACT_APP_SERVICE_E_HEALTH=/api/serviceE/health \
+            -e REACT_APP_REQUEST_TIMEOUT=15000 \
+            -e REACT_APP_ENABLE_DEBUG=false \
+            $ECR_REGISTRY/frontend:$IMAGE_TAG
+
+          echo " Deployment Successful!"
+
+          EOF
