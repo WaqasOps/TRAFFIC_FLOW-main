@@ -1,59 +1,14 @@
-name: CI/CD - Traffic Flow System
-
-on:
-  push:
-    branches: ["develop"]
-
-jobs:
-  # --- STAGE 1: BUILD & PUSH ---
-  build-and-push:
+deploy:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - service: servicea
-            folder: serviceA
-          - service: serviceb
-            folder: serviceB
-          - service: servicec
-            folder: serviceC
-          - service: serviced
-            folder: serviceD
-          - service: servicee
-            folder: serviceE
-          - service: frontend
-            folder: frontend
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
-
-      - name: Login to ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: Build, Tag, and Push Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.registry }}
-        run: |
-          docker build -t $ECR_REGISTRY/${{ matrix.service }}:latest ./${{ matrix.folder }}
-          docker push $ECR_REGISTRY/${{ matrix.service }}:latest
-
-  # --- STAGE 2: DEPLOY TO EC2 ---
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-      - name: Checkout code (to get docker-compose.yml)
-        uses: actions/checkout@v4
-
+      # ✅ SSH SETUP (FIXED)
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -61,24 +16,83 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Copy docker-compose.yml to EC2
+      # ✅ TEST SSH (VERY IMPORTANT)
+      - name: Test SSH Connection
         run: |
-          scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/docker-compose.yml
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH SUCCESS"
 
-      - name: Deploy via SSH
+      # ✅ DEPLOY
+      - name: Deploy to EC2
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+
           set -e
-          
-          # 1. Login to ECR
-          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-          
-          # 2. Pull all images defined in the compose file
-          sudo docker-compose pull
 
-          # 3. Start all services (it will automatically stop/update changed containers)
-          sudo docker-compose up -d
+          echo "🚀 Starting deployment..."
 
-          # 4. Cleanup old images to save space
-          sudo docker image prune -f
+          export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
+          export DB_USER=${{ secrets.DB_USER }}
+          export DB_PASS=${{ secrets.DB_PASS }}
+          export DB_NAME=${{ secrets.DB_NAME }}
+          export IMAGE_TAG=${{ github.sha }}
+
+          echo "🔐 Login to ECR"
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+
+          echo "🧹 Removing old containers"
+          sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
+
+          echo "🌐 Creating network"
+          sudo docker network create appnet || true
+
+          echo "🔗 Connecting postgres"
+          sudo docker network connect appnet postgres || true
+
+          echo "🚀 Starting services..."
+
+          sudo docker run -d --name servicea --network appnet -p 3001:3001 \
+            -e DB_HOST=postgres  -e DB_PORT=5432-e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_B_URL=http://serviceb:3002/serviceB \
+            $ECR_REGISTRY/servicea:$IMAGE_TAG
+
+          sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
+            -e DB_HOST=postgres  -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_C_URL=http://servicec:3003/serviceC \
+            $ECR_REGISTRY/serviceb:$IMAGE_TAG
+
+          sudo docker run -d --name servicec --network appnet -p 3003:3003 \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_D_URL=http://serviced:3004/serviceD \
+            $ECR_REGISTRY/servicec:$IMAGE_TAG
+
+          sudo docker run -d --name serviced --network appnet -p 3004:3004 \
+            -e DB_HOST=postgres  -e DB_PORT=5432-e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e SERVICE_E_URL=http://servicee:3005/serviceE \
+            $ECR_REGISTRY/serviced:$IMAGE_TAG
+
+          sudo docker run -d --name servicee --network appnet -p 3005:3005 \
+            -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            $ECR_REGISTRY/servicee:$IMAGE_TAG
+
+          echo "🌍 Starting frontend..."
+
+          sudo docker run -d --name frontend --network appnet -p 80:80 \
+            -e REACT_APP_SERVICE_A_URL=/api/servicea/ \
+            -e REACT_APP_SERVICE_A_HEALTH=/api/serviceA/health \
+            -e REACT_APP_SERVICE_B_HEALTH=/api/serviceB/health \
+            -e REACT_APP_SERVICE_C_HEALTH=/api/serviceC/health \
+            -e REACT_APP_SERVICE_D_HEALTH=/api/serviceD/health \
+            -e REACT_APP_SERVICE_E_HEALTH=/api/serviceE/health \
+            -e REACT_APP_REQUEST_TIMEOUT=15000 \
+            -e REACT_APP_ENABLE_DEBUG=false \
+            $ECR_REGISTRY/frontend:$IMAGE_TAG
+
+          echo "⏳ Waiting for services..."
+          sleep 30
+
+          echo "🧪 Health check..."
+          curl -f http://localhost:3005/health || exit 1
+
+          echo "✅ Deployment Successful!"
+
           EOF
