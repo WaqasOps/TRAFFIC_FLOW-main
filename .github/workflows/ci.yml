@@ -114,22 +114,22 @@ jobs:
           echo "🚀 Starting services..."
 
           sudo docker run -d --name servicea --network appnet -p 3001:3001 \
-            -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e DB_HOST=postgres  -e DB_PORT=5432-e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
             -e SERVICE_B_URL=http://serviceb:3002/serviceB \
             $ECR_REGISTRY/servicea:$IMAGE_TAG
 
           sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
-            -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e DB_HOST=postgres  -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
             -e SERVICE_C_URL=http://servicec:3003/serviceC \
             $ECR_REGISTRY/serviceb:$IMAGE_TAG
 
           sudo docker run -d --name servicec --network appnet -p 3003:3003 \
-            -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
             -e SERVICE_D_URL=http://serviced:3004/serviceD \
             $ECR_REGISTRY/servicec:$IMAGE_TAG
 
           sudo docker run -d --name serviced --network appnet -p 3004:3004 \
-            -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+            -e DB_HOST=postgres  -e DB_PORT=5432-e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
             -e SERVICE_E_URL=http://servicee:3005/serviceE \
             $ECR_REGISTRY/serviced:$IMAGE_TAG
 
