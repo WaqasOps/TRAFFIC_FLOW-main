@@ -8,7 +8,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false # Taake agar ek service fail ho to baaki chalti rahein
+      fail-fast: false
       matrix:
         include:
           - service: servicea
@@ -19,11 +19,10 @@ jobs:
             folder: serviceC
           - service: serviced
             folder: serviceD
-          - service: servicee
-            folder: serviceE
+          - service: servicee            folder: serviceE
           - service: frontend
             folder: frontend
-          - service: nginx       # <--- Nginx Matrix Item
+          - service: nginx
             folder: nginx
 
     steps:
@@ -53,7 +52,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
-  steps:
+    steps: # <--- Ab ye alignment sahi hai
       - name: Deploy All to EC2
         uses: appleboy/ssh-action@master
         with:
@@ -68,30 +67,28 @@ jobs:
             echo "Stopping and removing old containers..."
             sudo docker rm -f nginx frontend servicea serviceb servicec serviced servicee postgres || true
             sudo docker network create appnet || true
-
-            # 3. Database (Postgres) - Iska hona zaroori hai services ke liye
+            
+            # 3. Database (Postgres)
             sudo docker run -d --name postgres --network appnet \
               -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=microservices \
               postgres:15
-
+            
             # 4. Microservices (A to E)
             sudo docker run -d --name servicea --network appnet -p 3001:3001 ${{ secrets.ECR_REGISTRY }}/servicea:latest
             sudo docker run -d --name serviceb --network appnet -p 3002:3002 ${{ secrets.ECR_REGISTRY }}/serviceb:latest
             sudo docker run -d --name servicec --network appnet -p 3003:3003 ${{ secrets.ECR_REGISTRY }}/servicec:latest
             sudo docker run -d --name serviced --network appnet -p 3004:3004 ${{ secrets.ECR_REGISTRY }}/serviced:latest
             sudo docker run -d --name servicee --network appnet -p 3005:3005 ${{ secrets.ECR_REGISTRY }}/servicee:latest
-
-            # 5. Frontend (NO PORT EXPOSED TO HOST)
-            # Port 80 mapping (-p 80:80) yahan se bilkul hata di hai taake conflict na ho
+            
+            # 5. Frontend (Internal port only)
             sudo docker run -d --name frontend --network appnet \
               -e REACT_APP_SERVICE_A_URL=http://13.201.9.34/api/servicea/ \
               ${{ secrets.ECR_REGISTRY }}/frontend:latest
-
-            # 6. Wait for Frontend (Optional but safe)
-            # Nginx ko start hone se pehle frontend ka network par hona zaroori hai
+            
+            # 6. Wait for Frontend
             sleep 5
-
-            # 7. Nginx (ONLY CONTAINER EXPOSING PORT 80)
+            
+            # 7. Nginx (Public Entry Point)
             sudo docker run -d --name nginx --network appnet -p 80:80 \
               ${{ secrets.ECR_REGISTRY }}/nginx:latest
             
