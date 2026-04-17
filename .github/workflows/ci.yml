@@ -19,7 +19,8 @@ jobs:
             folder: serviceC
           - service: serviced
             folder: serviceD
-          - service: servicee            folder: serviceE
+          - service: servicee        
+              folder: serviceE
           - service: frontend
             folder: frontend
           - service: nginx
