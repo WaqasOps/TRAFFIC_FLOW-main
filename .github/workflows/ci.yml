@@ -22,17 +22,16 @@ deploy:
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH SUCCESS"
 
       # ✅ DEPLOY
-        name: Deploy to EC2
+      name: Deploy to EC2
 
 on:
   push:
     branches: ["main", "develop"]
 
-jobs: # <--- Ye line missing thi
+jobs:
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
-    # needs: build-and-push # Isay tabhi enable karein agar isi file mein 'build-and-push' job bhi hai
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
     steps:
@@ -59,7 +58,7 @@ jobs: # <--- Ye line missing thi
           echo "🚀 Starting deployment..."
 
           export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
-          export IMAGE_TAG=latest  # Ya ${{ github.sha }} agar aap tags use kar rahe hain
+          export IMAGE_TAG=latest
 
           echo "🔐 Login to ECR"
           aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
@@ -70,13 +69,11 @@ jobs: # <--- Ye line missing thi
           echo "🌐 Creating network"
           sudo docker network create appnet || true
 
-          # Note: 'postgres' container must already be running for this to work
           echo "🔗 Connecting postgres"
           sudo docker network connect appnet postgres || true
 
           echo "🚀 Starting services..."
 
-          # Fixed typos in env variables below (added missing spaces)
           sudo docker run -d --name servicea --network appnet -p 3001:3001 \
             -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
             -e SERVICE_B_URL=http://serviceb:3002/serviceB \
@@ -109,3 +106,4 @@ jobs: # <--- Ye line missing thi
 
           echo "✅ Deployment Successful!"
           EOF
+        
