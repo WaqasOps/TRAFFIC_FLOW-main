@@ -1,13 +1,13 @@
-name: CI - Build & Push to ECR
+name: CI/CD - Traffic Flow System
 
 on:
   push:
     branches: ["develop"]
 
 jobs:
+  # --- STAGE 1: BUILD & PUSH ---
   build-and-push:
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         include:
@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -36,30 +36,24 @@ jobs:
           aws-region: ap-south-1
 
       - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region ap-south-1 | \
-          docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build Docker image
+      - name: Build, Tag, and Push Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.registry }}
         run: |
-          docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
+          docker build -t $ECR_REGISTRY/${{ matrix.service }}:latest ./${{ matrix.folder }}
+          docker push $ECR_REGISTRY/${{ matrix.service }}:latest
 
-      - name: Tag image
-        run: |
-          docker tag ${{ matrix.service }}:latest ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
-
-      - name: Push to ECR
-        run: |
-          docker push ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
-
+  # --- STAGE 2: DEPLOY TO EC2 ---
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
-    env:
-      AWS_REGION: ap-south-1
-      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-
     steps:
+      - name: Checkout code (to get docker-compose.yml)
+        uses: actions/checkout@v4
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -67,48 +61,24 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2
+      - name: Copy docker-compose.yml to EC2
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/docker-compose.yml
+
+      - name: Deploy via SSH
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
-          set -x
-
+          
           # 1. Login to ECR
-          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          
+          # 2. Pull all images defined in the compose file
+          sudo docker-compose pull
 
-          # 2. Pull latest images
-          sudo docker pull ${{ env.ECR_REGISTRY }}/frontend:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/servicea:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/serviceb:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/servicec:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/serviced:latest
-          sudo docker pull ${{ env.ECR_REGISTRY }}/servicee:latest
+          # 3. Start all services (it will automatically stop/update changed containers)
+          sudo docker-compose up -d
 
-          # 3. Ensure network exists
-          sudo docker network create appnet || true
-
-          # 4. FIX: Stop and remove the 'auth' container
-          sudo docker rm -f auth || true
-
-          # 5. Run new container with environment variables injected
-          sudo docker run -d \
-            --name auth \
-            --network appnet \
-            --restart always \
-            -p 3001:3001 \
-            -e DB_HOST=${{ secrets.DB_HOST }} \
-            -e DB_PORT=${{ secrets.DB_PORT }} \
-            -e DB_USER=${{ secrets.DB_USER }} \
-            -e DB_PASS=${{ secrets.DB_PASS }} \
-            -e DB_NAME=${{ secrets.DB_NAME }} \
-            -e SERVICE_NAME=serviceA \
-            -e SERVICE_PORT=3001 \
-            -e PORT=3001 \
-            -e SERVICE_B_URL=http://serviceb:3002/serviceB \
-            -e NODE_ENV=development \
-            -e LOG_LEVEL=debug \
-            ${{ env.ECR_REGISTRY }}/servicea:latest
-
-          # 6. Optional: Cleanup old images
+          # 4. Cleanup old images to save space
           sudo docker image prune -f
           EOF
