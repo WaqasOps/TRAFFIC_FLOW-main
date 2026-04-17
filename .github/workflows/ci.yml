@@ -1,21 +1,11 @@
-name: CI/CD Pipeline
+name: CI - Build & Push to ECR
 
 on:
   push:
-    branches: [develop, main]
-  pull_request:
-    branches: [main]
+    branches: ["develop"]
 
-env:
-  AWS_REGION: ap-south-1
-
-permissions:
-  contents: read
-
-# ================= BUILD & PUSH =================
 jobs:
   build-and-push:
-    name: Build and Push Docker Images
     runs-on: ubuntu-latest
 
     strategy:
@@ -36,42 +26,40 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: actions/checkout@v3
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ap-south-1
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ap-south-1 | \
+          docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
-      - name: Build & Push Images
-        uses: docker/build-push-action@v5
-        with:
-          context: ./${{ matrix.folder }}
-          push: true
-          tags: |
-            ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
-            ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ matrix.service }} ./${{ matrix.folder }}
 
-# ================= DEPLOY =================
+      - name: Tag image
+        run: |
+          docker tag ${{ matrix.service }}:latest ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
+
   deploy:
-    name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    env:
+      AWS_REGION: ap-south-1
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # ✅ SSH SETUP (FIXED)
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -79,83 +67,48 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # ✅ TEST SSH (VERY IMPORTANT)
-      - name: Test SSH Connection
-        run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH SUCCESS"
-
-      # ✅ DEPLOY
       - name: Deploy to EC2
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
+          set -x
 
-          echo "🚀 Starting deployment..."
+          # 1. Login to ECR
+          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-          export ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
-          export DB_USER=${{ secrets.DB_USER }}
-          export DB_PASS=${{ secrets.DB_PASS }}
-          export DB_NAME=${{ secrets.DB_NAME }}
-          export IMAGE_TAG=${{ github.sha }}
+          # 2. Pull latest images
+          sudo docker pull ${{ env.ECR_REGISTRY }}/frontend:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/servicea:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/serviceb:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/servicec:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/serviced:latest
+          sudo docker pull ${{ env.ECR_REGISTRY }}/servicee:latest
 
-          echo "🔐 Login to ECR"
-          aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
-
-          echo "🧹 Removing old containers"
-          sudo docker rm -f frontend servicea serviceb servicec serviced servicee || true
-
-          echo "🌐 Creating network"
+          # 3. Ensure network exists
           sudo docker network create appnet || true
 
-          echo "🔗 Connecting postgres"
-          sudo docker network connect appnet postgres || true
+          # 4. FIX: Stop and remove the 'auth' container
+          sudo docker rm -f auth || true
 
-          echo "🚀 Starting services..."
-
-          sudo docker run -d --name servicea --network appnet -p 3001:3001 \
-            -e DB_HOST=postgres  -e DB_PORT=5432-e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
+          # 5. Run new container with environment variables injected
+          sudo docker run -d \
+            --name auth \
+            --network appnet \
+            --restart always \
+            -p 3001:3001 \
+            -e DB_HOST=${{ secrets.DB_HOST }} \
+            -e DB_PORT=${{ secrets.DB_PORT }} \
+            -e DB_USER=${{ secrets.DB_USER }} \
+            -e DB_PASS=${{ secrets.DB_PASS }} \
+            -e DB_NAME=${{ secrets.DB_NAME }} \
+            -e SERVICE_NAME=serviceA \
+            -e SERVICE_PORT=3001 \
+            -e PORT=3001 \
             -e SERVICE_B_URL=http://serviceb:3002/serviceB \
-            $ECR_REGISTRY/servicea:$IMAGE_TAG
+            -e NODE_ENV=development \
+            -e LOG_LEVEL=debug \
+            ${{ env.ECR_REGISTRY }}/servicea:latest
 
-          sudo docker run -d --name serviceb --network appnet -p 3002:3002 \
-            -e DB_HOST=postgres  -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
-            -e SERVICE_C_URL=http://servicec:3003/serviceC \
-            $ECR_REGISTRY/serviceb:$IMAGE_TAG
-
-          sudo docker run -d --name servicec --network appnet -p 3003:3003 \
-            -e DB_HOST=postgres -e DB_PORT=5432 -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
-            -e SERVICE_D_URL=http://serviced:3004/serviceD \
-            $ECR_REGISTRY/servicec:$IMAGE_TAG
-
-          sudo docker run -d --name serviced --network appnet -p 3004:3004 \
-            -e DB_HOST=postgres  -e DB_PORT=5432-e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
-            -e SERVICE_E_URL=http://servicee:3005/serviceE \
-            $ECR_REGISTRY/serviced:$IMAGE_TAG
-
-          sudo docker run -d --name servicee --network appnet -p 3005:3005 \
-            -e DB_HOST=postgres -e DB_NAME=microservices -e DB_USER=admin -e DB_PASS=admin \
-            $ECR_REGISTRY/servicee:$IMAGE_TAG
-
-          echo "🌍 Starting frontend..."
-
-          sudo docker run -d --name frontend --network appnet -p 80:80 \
-            -e REACT_APP_SERVICE_A_URL=/api/servicea/ \
-            -e REACT_APP_SERVICE_A_HEALTH=/api/serviceA/health \
-            -e REACT_APP_SERVICE_B_HEALTH=/api/serviceB/health \
-            -e REACT_APP_SERVICE_C_HEALTH=/api/serviceC/health \
-            -e REACT_APP_SERVICE_D_HEALTH=/api/serviceD/health \
-            -e REACT_APP_SERVICE_E_HEALTH=/api/serviceE/health \
-            -e REACT_APP_REQUEST_TIMEOUT=15000 \
-            -e REACT_APP_ENABLE_DEBUG=false \
-            $ECR_REGISTRY/frontend:$IMAGE_TAG
-
-          echo "⏳ Waiting for services..."
-          sleep 30
-
-          echo "🧪 Health check..."
-          curl -f http://localhost:3005/health || exit 1
-
-          echo "✅ Deployment Successful!"
-
+          # 6. Optional: Cleanup old images
+          sudo docker image prune -f
           EOF
