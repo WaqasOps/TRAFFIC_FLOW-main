@@ -61,7 +61,7 @@ jobs:
             ${{ secrets.ECR_REGISTRY }}/${{ matrix.service }}:latest
 
 # ================= DEPLOY =================
- deploy:
+  deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
