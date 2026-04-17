@@ -20,7 +20,7 @@ jobs:
           - service: serviced
             folder: serviceD
           - service: servicee        
-              folder: serviceE
+            folder: serviceE
           - service: frontend
             folder: frontend
           - service: nginx
